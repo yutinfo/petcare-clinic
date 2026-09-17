@@ -17,18 +17,18 @@
 ครอบคลุม: รับสัตว์เข้าคลินิก → เวชระเบียน → สั่ง/จ่ายยา → ฝากเลี้ยง → อาบน้ำตัดขน →
 ขายของหน้าร้าน → ออกใบกำกับภาษีไทย → พอร์ทัลลูกค้าจองออนไลน์
 
-**สถานะปัจจุบัน (2026-09-17): มีแต่เอกสารออกแบบ ยังไม่มีโค้ดแอปพลิเคชันแม้แต่บรรทัดเดียว**
-ยังไม่มี `package.json`, ไม่มี `src/`
+**สถานะปัจจุบัน (2026-09-17): เฟส 0 รากฐานเริ่มแล้ว** — มีโครง Next.js + Prisma
++ docker compose + RLS ที่รันกับ PostgreSQL จริงแล้ว ยังไม่มีหน้างานคลินิก
 Git remote: https://github.com/yutinfo/petcare-clinic.git
 
 สิ่งที่มีอยู่จริง:
 
 ```
-README.md                                 สารบัญ + หลักคิด 6 ข้อ
-docs/00 … docs/10                         เอกสารออกแบบ 11 ไฟล์
-prisma/schema.prisma                      80+ ตาราง ผ่าน prisma validate แล้ว
-prisma/migrations/manual/001_*.sql        RLS + trigger + constraint ที่ Prisma เขียนไม่ได้
-.env.example                              ตัวแปรสภาพแวดล้อมที่ระบบจะใช้
+package.json / src/                       โครง Next.js 15 + โดเมน modules/server
+docker-compose.yml                        postgres 16 + redis + minio + mailhog
+prisma/schema.prisma                      80+ ตาราง
+prisma/migrations/20260917120000_init     สคีมา
+prisma/migrations/20260917120001_rls_*    RLS + trigger + constraint
 docs/STATUS.md                            สถานะงานล่าสุด + คิวงานถัดไป  ← อ่านต่อจากไฟล์นี้
 ```
 
@@ -104,42 +104,44 @@ docs/STATUS.md                            สถานะงานล่าส�
 
 ## 5. คำสั่งที่ใช้ได้จริง ณ ตอนนี้
 
-ยังไม่มี `package.json` — คำสั่งที่รันได้มีเพียงเท่านี้ (ทดสอบแล้วว่าใช้ได้):
+ต้องมีไฟล์ `.env` (คัดลอกจาก `.env.example`) และ Docker สำหรับงานที่แตะฐานข้อมูล
 
 ```bash
-# ตรวจสคีมา (ต้องมี DATABASE_URL แม้จะไม่ต่อ DB จริง)
-DATABASE_URL="postgresql://u:p@localhost:5432/petcare" \
-  npx prisma@6 validate --schema prisma/schema.prisma
-
-# จัดรูปแบบสคีมา
-DATABASE_URL="postgresql://u:p@localhost:5432/petcare" \
-  npx prisma@6 format --schema prisma/schema.prisma
+docker compose up -d
+npx prisma migrate deploy    # สคีมา + RLS/trigger
+npx prisma db seed           # permission, บทบาทสำเร็จรูป, species/breed
+npm run typecheck
+npm run lint
+npm test                     # unit (ไม่ต้องมี Docker)
+npm run test:int             # integration + RLS กับ Postgres จริง (testcontainers)
+npm run build
+npm run db:check-rls         # v_rls_coverage_gaps ต้องว่าง
 ```
 
 > บน Windows/PowerShell ใช้ `$env:DATABASE_URL="..."` แยกบรรทัดก่อน แล้วค่อยเรียก `npx`
 > (PowerShell 5.1 ไม่รองรับ inline env prefix แบบ bash)
+> โปรเจกต์นี้มี `.env` แล้ว Prisma โหลดให้เอง
 
-### คำสั่งที่ *จะ* มีหลังตั้งโครงเฟส 0
+| สคริปต์ | หน้าที่ | ตรวจแล้วว่าใช้ได้ |
+| --- | --- | --- |
+| `dev` | Next.js dev server | ยังไม่จับเวลาในเซสชันนี้ |
+| `build` / `start` | build และรัน production | ✅ `build` ผ่าน |
+| `typecheck` | `tsc --noEmit` | ✅ |
+| `lint` | ESLint (รวม rule ห้าม modules import next/*) | ✅ |
+| `test` | Vitest unit | ✅ |
+| `test:int` | integration ที่ใช้ testcontainers (เทส RLS อยู่ในชุดนี้) | ✅ |
+| `test:e2e` | Playwright | ❌ ยังไม่ติดตั้ง Playwright |
+| `db:migrate` | `prisma migrate dev` | ใช้ `migrate deploy` แล้วผ่าน |
+| `db:push:manual` | รัน `prisma/sql/*.sql` ถ้ามี | โฟลเดอร์ยังว่าง — RLS ย้ายไปเป็น migration แล้ว |
+| `db:seed` | seed ข้อมูลอ้างอิง (species, breed, permission, role) | ✅ (ใช้ `MIGRATE_DATABASE_URL` เพราะ role ระบบมี `tenant_id` เป็น NULL) |
+| `db:studio` | Prisma Studio | ยังไม่ได้เปิด |
+| `db:check-rls` | ตรวจ `v_rls_coverage_gaps` | ✅ ว่าง |
+| `worker` | BullMQ worker ดึง OutboxEvent | ยังไม่ได้รันค้างไว้ |
 
-ยังไม่มีอยู่จริง — **อย่าอ้างในเอกสารหรือคำตอบว่ารันได้ จนกว่าจะสร้างจริงและทดสอบแล้ว**
-เมื่อสร้าง `package.json` ให้ใช้ชื่อสคริปต์เหล่านี้เพื่อความสม่ำเสมอ:
-
-| สคริปต์ | หน้าที่ |
-| --- | --- |
-| `dev` | Next.js dev server |
-| `build` / `start` | build และรัน production |
-| `typecheck` | `tsc --noEmit` |
-| `lint` | ESLint (รวม rule บังคับขอบเขตโมดูล) |
-| `test` | Vitest unit |
-| `test:int` | integration ที่ใช้ testcontainers (เทส RLS อยู่ในชุดนี้) |
-| `test:e2e` | Playwright |
-| `db:migrate` | `prisma migrate dev` |
-| `db:push:manual` | รัน `prisma/migrations/manual/*.sql` ตามลำดับ |
-| `db:seed` | seed ข้อมูลอ้างอิง (species, breed, permission, role, taxCode) |
-| `db:studio` | Prisma Studio |
-
-**รันเทสไฟล์เดียว** (เมื่อมีแล้ว): `npx vitest run path/to/file.test.ts`
+**รันเทสไฟล์เดียว:** `npx vitest run path/to/file.test.ts`
 **รันเทสเดียว:** `npx vitest run -t "ชื่อเทส"`
+
+**อย่าใส่ SQL เสริมไว้ใต้ `prisma/migrations/<ชื่อ>/` โดยไม่มี `migration.sql`** — Prisma จะถือทุกโฟลเดอร์เป็น migration
 
 ---
 

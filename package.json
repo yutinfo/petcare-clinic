@@ -1,0 +1,62 @@
+{
+  "name": "petcare-clinic",
+  "version": "0.1.0",
+  "private": true,
+  "scripts": {
+    "dev": "next dev",
+    "build": "next build",
+    "start": "next start",
+    "typecheck": "tsc --noEmit",
+    "lint": "eslint .",
+    "test": "vitest run",
+    "test:int": "vitest run --config vitest.int.config.ts",
+    "test:e2e": "playwright test",
+    "db:migrate": "prisma migrate dev",
+    "db:migrate:deploy": "prisma migrate deploy",
+    "db:push:manual": "tsx scripts/apply-manual-sql.ts",
+    "db:seed": "prisma db seed",
+    "db:studio": "prisma studio",
+    "db:check-rls": "tsx scripts/check-rls-coverage.ts",
+    "worker": "tsx src/server/jobs/worker.ts"
+  },
+  "prisma": {
+    "seed": "tsx prisma/seed.ts"
+  },
+  "dependencies": {
+    "@prisma/client": "6.19.3",
+    "bcryptjs": "^3.0.2",
+    "bullmq": "^5.61.0",
+    "class-variance-authority": "^0.7.1",
+    "clsx": "^2.1.1",
+    "date-fns": "^4.1.0",
+    "date-fns-tz": "^3.2.0",
+    "ioredis": "^5.8.1",
+    "lucide-react": "^0.544.0",
+    "next": "^15.5.4",
+    "next-auth": "5.0.0-beta.29",
+    "otpauth": "^9.4.0",
+    "pg": "^8.16.3",
+    "react": "^19.1.1",
+    "react-dom": "^19.1.1",
+    "tailwind-merge": "^3.3.1",
+    "zod": "^4.1.11"
+  },
+  "devDependencies": {
+    "@eslint/eslintrc": "^3.3.1",
+    "@tailwindcss/postcss": "^4.1.13",
+    "@testcontainers/postgresql": "^11.6.0",
+    "@types/bcryptjs": "^2.4.6",
+    "@types/node": "^22.18.6",
+    "@types/pg": "^8.15.5",
+    "@types/react": "^19.1.13",
+    "@types/react-dom": "^19.1.9",
+    "eslint": "^9.36.0",
+    "eslint-config-next": "^15.5.4",
+    "prisma": "6.19.3",
+    "tailwindcss": "^4.1.13",
+    "testcontainers": "^11.6.0",
+    "tsx": "^4.20.5",
+    "typescript": "^5.9.2",
+    "vitest": "^3.2.4"
+  }
+}

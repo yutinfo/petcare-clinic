@@ -6,8 +6,10 @@
 > ส่วนไฟล์นี้คือสิ่งที่เปลี่ยนทุกวัน
 
 **อัปเดตล่าสุด:** 2026-09-17
-**เฟสปัจจุบัน:** ก่อนเฟส 0 — ออกแบบเสร็จ ยังไม่เริ่มเขียนโค้ด
-**สถานะ:** 🟡 รอผู้ใช้ตัดสินใจว่าจะเริ่มตั้งโครงเฟส 0 หรือทำ prototype หน้าเช็คอินก่อน
+**เฟสปัจจุบัน:** เฟส 0 — รากฐาน (โครงพร้อม RLS ผ่านเทสแล้ว ยังไม่มีหน้างานคลินิก)
+**สถานะ:** 🟢 เฟส 0 ข้อ 1–10 วางแล้ว — AI ตัวถัดไปรับต่อที่คิวในหัวข้อ 2
+
+**AI ตัวถัดไปเริ่มยังไง:** `git pull` → คัดลอก `.env.example` เป็น `.env` → `docker compose up -d` → `npx prisma migrate deploy` → `npx prisma db seed` → อ่านคิวหัวข้อ 2 (ข้อ 11 เป็นต้นไป หรือเส้นทาง B หน้าเช็คอิน)
 
 ---
 
@@ -31,6 +33,24 @@
 | `git init` + remote `origin` | https://github.com/yutinfo/petcare-clinic.git | ✅ เชื่อมแล้ว |
 | `.gitignore` สำหรับ Next.js / env / เทส | `.gitignore` | เขียนเสร็จ |
 
+### 2026-09-17 — เฟส 0 รากฐาน
+
+ผู้ใช้สั่งให้ทำตามเอกสาร (ไม่รอเลือก A/B) → เดินเส้นทาง A ตาม roadmap
+
+| สิ่งที่ทำ | ไฟล์ | สถานะการตรวจสอบ |
+| --- | --- | --- |
+| โครง Next.js 15 + TS strict + Tailwind 4 + ปุ่ม shadcn | `package.json`, `src/app/`, `src/components/ui/button.tsx` | ✅ `npm run build` ผ่าน (Next 15.5.25) |
+| ESLint ห้าม `modules/` import `next/*` และ `@/app` | `eslint.config.mjs` | ✅ `npm run lint` ผ่าน |
+| docker-compose (postgres 16, redis, minio จาก quay.io, mailhog) | `docker-compose.yml` | ✅ `docker compose up -d` แล้ว postgres healthy |
+| migration สคีมา + RLS/trigger | `prisma/migrations/20260917120000_init`, `...20001_rls_and_constraints` | ✅ `prisma migrate deploy` กับ Postgres 16 จริง และกับ testcontainers |
+| `AppContext` + `set_config('app.tenant_id')` + emit → OutboxEvent | `src/server/context.ts` | ✅ เทส outbox ผ่าน |
+| เทส RLS "อ่านข้าม tenant ไม่ได้" + WITH CHECK + `v_rls_coverage_gaps` ว่าง | `src/server/db/rls.int.test.ts` | ✅ `npm run test:int` ผ่าน (5 tests) |
+| Auth.js v5: staff (รหัสผ่าน+TOTP) / owner (OTP เบอร์โทร) | `src/server/auth/` | เขียนแล้ว ยังไม่มีเทสล็อกอินจริง / ยังไม่มีหน้า login |
+| seed permission + บทบาทสำเร็จรูป 9 แบบพนักงาน + PET_OWNER | `prisma/seed.ts`, `src/modules/identity/permissions.ts` | ✅ `npx prisma db seed` ผ่าน (ใช้ `MIGRATE_DATABASE_URL`) |
+| AuditLog helper + Outbox worker (BullMQ) | `src/server/audit.ts`, `src/server/jobs/` | drainOutbox เทสผ่าน; โปรเซส `npm run worker` ยังไม่ได้รันค้าง |
+| money / bahtText / วันที่ พ.ศ. / DocumentSequence | `src/modules/shared/`, `src/modules/tax/` | ✅ unit 9 tests + int sequence ผ่าน |
+| CI | `.github/workflows/ci.yml` | เขียนแล้ว ยังไม่เห็นผลรันบน GitHub |
+
 > **บันทึกการแก้จุดบกพร่อง (2026-09-17):** สคีมาฉบับแรกไม่ได้ใส่ `@map` ทำให้ Prisma
 > สร้างคอลัมน์เป็น camelCase (`"tenantId"`) ขณะที่ SQL ทุกไฟล์อ้างเป็น snake_case
 > (`tenant_id`) — RLS policy และ trigger ทั้งหมดจะรันไม่ผ่าน แก้แล้วด้วย
@@ -45,23 +65,25 @@
 
 ## 2. คิวงานถัดไป (เรียงตามลำดับที่ควรทำ)
 
-### 🔜 งานถัดไปทันที — เลือก 1 ใน 2 เส้นทาง
+### 🔜 งานถัดไปทันที — เฟส 0 ที่ยังค้าง แล้วตามด้วยเส้นทาง B
 
-ผู้ใช้ยังไม่ตอบว่าจะเอาเส้นไหน **ถ้ายังไม่มีคำตอบ ให้ถามก่อนเริ่ม**
+**เฟส 0 ที่ยังไม่จบ (ให้ AI ตัวถัดไปต่อจากตรงนี้ได้)**
+1. [x] `package.json` + Next.js 15 + TypeScript strict + Tailwind + shadcn/ui (ปุ่มอย่างเดียว ยังไม่มีชุดคอมโพเนนต์ครบ)
+2. [x] ESLint บังคับขอบเขตโมดูล (`no-restricted-imports` ใน `src/modules/**`)
+3. [x] `docker-compose.yml`
+4. [x] `prisma migrate deploy` รวม RLS — **พิสูจน์กับ PostgreSQL 16 จริงแล้ว**
+5. [x] `AppContext` + `withTenant` (ไม่ได้ห่อทุก query เป็น transaction ตามตัวอย่างใน docs/01 เพราะช้า — ใช้ `ctx.tx` เป็นทางหลัก)
+6. [x] เทส RLS ด้วย testcontainers
+7. [x] Auth.js สองเส้นทาง + seed บทบาท — ⚠️ ยังไม่มีหน้า login และยังไม่มีเทส authorize
+8. [x] `AuditLog` helper + `drainOutbox` — ⚠️ ยังไม่ได้รัน worker ค้างกับ Redis
+9. [x] ยูทิลิตี้เงิน/วันที่/`bahtText`/`DocumentSequence`
+10. [x] CI workflow — ⚠️ ยังไม่เห็นผลรันบน GitHub
+11. [ ] หน้า login พนักงาน + ขอ OTP เจ้าของสัตว์
+12. [ ] middleware แปลง subdomain → `tenantId` แล้วใส่ context
+13. [ ] Playwright (`test:e2e` ยังไม่มีแพ็กเกจ)
+14. [ ] seed คลินิกตัวอย่าง (tenant/สาขา/ผู้ใช้ staff) สำหรับพัฒนาหน้าจอ — ตอนนี้ seed มีแค่ข้อมูลอ้างอิงกลาง
 
-**เส้นทาง A — ตั้งโครงเฟส 0 (รากฐาน)**
-1. [ ] `package.json` + Next.js 15 + TypeScript strict + Tailwind + shadcn/ui
-2. [ ] ESLint พร้อม `import/no-restricted-paths` บังคับขอบเขตโมดูลตาม AGENTS.md §6
-3. [ ] `docker-compose.yml` สำหรับ dev (postgres 16 + redis + minio + mailhog)
-4. [ ] `prisma migrate dev` ครั้งแรก + รัน `001_rls_and_constraints.sql` → **พิสูจน์ว่า SQL ใช้ได้จริง**
-5. [ ] `AppContext` (tenantId, branchId, actor, tx, can, emit) + tenant client extension
-6. [ ] เทส RLS ด้วย testcontainers — เทสแรกที่ต้องผ่านคือ "อ่านข้ามtenant ไม่ได้"
-7. [ ] Auth.js สองเส้นทาง (staff / owner) + seed permission + role สำเร็จรูป 9 แบบ
-8. [ ] `AuditLog` + `OutboxEvent` + worker พื้นฐาน
-9. [ ] ยูทิลิตี้: money (สตางค์), date (พ.ศ.), `bahtText()`, `DocumentSequence`
-10. [ ] CI: typecheck, lint, test, ตรวจ `v_rls_coverage_gaps` ว่าว่าง
-
-**เส้นทาง B — prototype หน้าเช็คอิน (พิสูจน์คุณค่าก่อนลงทุน)**
+**เส้นทาง B — prototype หน้าเช็คอิน (งานถัดไปหลังรากฐาน ตาม docs/10 §10)**
 1. [ ] Next.js ขั้นต่ำ + Prisma + Postgres ในเครื่อง
 2. [ ] Seed ข้อมูลปลอม: เจ้าของ 500 คน สัตว์ 800 ตัว
 3. [ ] หน้าค้นหาช่องเดียว (เบอร์/ชื่อเจ้าของ/ชื่อสัตว์/รหัส) ด้วย `pg_trgm`
@@ -69,7 +91,7 @@
 5. [ ] เช็คอิน → สร้าง `Encounter` + บันทึกน้ำหนัก
 6. [ ] **จับเวลากับเจ้าหน้าที่จริง: เปิดเคส walk-in ต้องเสร็จใน 60 วินาที**
 
-> เหตุผลที่แนะนำเส้นทาง B ก่อน: ถ้าหน้านี้ไม่เร็วกว่ากระดาษ โมดูลที่เหลือก็ไม่มีความหมาย
+> รากฐานพร้อมแล้ว งานที่มีคุณค่าต่อคลินิกคือหน้าเช็คอิน
 > (ดู [docs/10-roadmap.md §10](10-roadmap.md))
 
 ### ⏳ หลังจากนั้น
@@ -83,7 +105,7 @@
 
 | # | คำถาม | รอใคร | บล็อกอะไร | สถานะ |
 | --- | --- | --- | --- | --- |
-| Q1 | เริ่มเส้นทาง A หรือ B? | ผู้ใช้ | งานถัดไปทั้งหมด | 🔴 รอตอบ |
+| Q1 | เริ่มเส้นทาง A หรือ B? | ผู้ใช้ | งานถัดไปทั้งหมด | ✅ ตอบแล้ว: ทำตามเอกสาร = เฟส 0 (A) ก่อน แล้วค่อยหน้าเช็คอิน (B) |
 | Q2 | บริการสัตวแพทย์เสีย VAT หรือไม่ แต่ละรายการควรตั้ง `taxCode` เป็นอะไร | ผู้ทำบัญชีของคลินิก | seed แค็ตตาล็อกบริการ, เทสการออกใบกำกับภาษี | 🔴 รอตอบ |
 | Q3 | แบบฟอร์มรายงานทะเบียนยาควบคุมปัจจุบันหน้าตาอย่างไร | เภสัชกร | รายงานยาควบคุม (เฟส 2) | 🟡 ยังไม่ถึงเวลา |
 | Q4 | คลินิกนำร่องคือที่ไหน มีข้อมูลเดิมให้นำเข้าไหม (รูปแบบอะไร) | ผู้ใช้ | เครื่องมือนำเข้าข้อมูล | 🟡 ยังไม่ถึงเวลา |
@@ -97,8 +119,11 @@
 
 | ความเสี่ยง | สถานะ |
 | --- | --- |
-| `001_rls_and_constraints.sql` ยังไม่เคยรันกับ PostgreSQL จริง | 🟡 **ต้องพิสูจน์เป็นงานแรกของเฟส 0** — ไวยากรณ์ SQL, ลำดับ trigger และ RLS policy ยังไม่ได้ทดสอบ (ชื่อคอลัมน์ตรงกันแล้ว ดูหัวข้อ 1) |
+| SQL RLS/trigger ยังไม่เคยรันกับ PostgreSQL จริง | ✅ ปิดแล้ว — `migrate deploy` + testcontainers ผ่าน |
 | สคีมายังไม่มีสัตวแพทย์จริงรีวิว | 🟡 ฟิลด์ในเวชระเบียนอาจขาดหรือเกิน |
+| Auth session เป็น JWT ไม่ได้เก็บใน DB | 🟡 สคีมายังไม่มีตาราง Session ตามที่ docs/01 ระบุ — อย่าเพิ่มตารางโดยไม่ถาม |
+| `mfaSecret` ยังไม่เข้ารหัสที่ชั้นแอป | 🟡 มี `FIELD_ENCRYPTION_KEY` ใน env แล้วยังไม่ได้ใช้ |
+| Prisma client extension ห่อทุก query เป็น transaction | 🟡 ไม่ได้ทำตามตัวอย่างใน docs/01 — ใช้ `ctx.tx` แทน เพราะห่อทุก query จะช้า |
 
 ---
 
@@ -117,6 +142,9 @@
 | 2026-09-17 | `taxCode` ตั้งได้รายรายการ ไม่ฝังสมมติฐาน VAT ในโค้ด | เรื่องภาษีต้องให้ผู้ทำบัญชีตัดสิน ไม่ใช่ผู้พัฒนา | AI (เสนอ) |
 | 2026-09-17 | `AGENTS.md` เป็นไฟล์บริบทหลัก ไฟล์เฉพาะเครื่องมือชี้มาที่เดียว | ผู้ใช้ต้องการเปลี่ยน AI ตัวไหนก็ทำงานต่อได้ | ผู้ใช้ |
 | 2026-09-17 | GitHub repo ชื่อ `petcare-clinic` (`yutinfo/petcare-clinic`) | ผู้ใช้สร้าง remote นี้ | ผู้ใช้ |
+| 2026-09-17 | เริ่มเฟส 0 (เส้นทาง A) ก่อน prototype หน้าเช็คอิน | ผู้ใช้สั่งให้ทำตามเอกสาร และจะมี AI หลายตัวช่วยกัน | ผู้ใช้ |
+| 2026-09-17 | ย้าย SQL RLS จาก `prisma/migrations/manual/` เป็น migration ที่สอง | Prisma ถือทุกโฟลเดอร์ใต้ `migrations/` เป็น migration ทำให้ `migrate deploy` พัง | AI |
+| 2026-09-17 | รูป MinIO ใช้ `quay.io/minio/minio` | `minio/minio` บน Docker Hub ถูกปฏิเสธตอน pull | AI |
 
 ---
 

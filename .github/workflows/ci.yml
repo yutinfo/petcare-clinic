@@ -1,0 +1,27 @@
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+env:
+  DATABASE_URL: postgresql://app_user:app_user_dev@localhost:5432/petcare?schema=public
+  MIGRATE_DATABASE_URL: postgresql://app_migrator:app_migrator_dev@localhost:5432/petcare?schema=public
+  AUTH_SECRET: ci-only-not-a-real-secret-value-32ch
+
+jobs:
+  verify:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+      - run: npm ci
+      - run: npm run typecheck
+      - run: npm run lint
+      - run: npm test
+      - name: Integration tests (Postgres จริงผ่าน testcontainers + ตรวจ RLS coverage)
+        run: npm run test:int

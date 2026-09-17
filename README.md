@@ -31,7 +31,7 @@
 | [docs/09-api-contract.md](docs/09-api-contract.md) | รูปแบบ API, ตัวอย่าง endpoint, error model |
 | [docs/10-roadmap.md](docs/10-roadmap.md) | แผนพัฒนาเป็นเฟส, definition of done, ความเสี่ยง |
 | [prisma/schema.prisma](prisma/schema.prisma) | สคีมาฐานข้อมูลฉบับร่าง — ผ่าน `prisma validate` แล้ว |
-| [prisma/migrations/manual/001_rls_and_constraints.sql](prisma/migrations/manual/001_rls_and_constraints.sql) | RLS, ข้อจำกัดกันจองซ้อน, trigger สต็อก/เอกสารการเงิน — สิ่งที่ Prisma เขียนไม่ได้ |
+| [prisma/migrations/20260917120001_rls_and_constraints/migration.sql](prisma/migrations/20260917120001_rls_and_constraints/migration.sql) | RLS, ข้อจำกัดกันจองซ้อน, trigger สต็อก/เอกสารการเงิน — สิ่งที่ Prisma เขียนไม่ได้ |
 | [.env.example](.env.example) | ตัวแปรสภาพแวดล้อมที่ระบบต้องใช้ |
 
 ## หลักคิดหลัก 6 ข้อ
