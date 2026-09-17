@@ -1,5 +1,11 @@
 import "next-auth";
 
+export type SessionBranch = {
+  id: string;
+  code: string;
+  name: string;
+};
+
 declare module "next-auth" {
   interface User {
     kind?: "staff" | "owner";
@@ -13,6 +19,13 @@ declare module "next-auth" {
       email?: string | null;
       name?: string | null;
       image?: string | null;
+      tenantId?: string;
+      tenantSlug?: string;
+      tenantName?: string;
+      membershipId?: string | null;
+      defaultBranchCode?: string;
+      permissions: string[];
+      branches: SessionBranch[];
     };
   }
 }
@@ -20,5 +33,12 @@ declare module "next-auth" {
 declare module "next-auth/jwt" {
   interface JWT {
     kind?: "staff" | "owner";
+    tenantId?: string;
+    tenantSlug?: string;
+    tenantName?: string;
+    membershipId?: string;
+    defaultBranchCode?: string;
+    permissions?: string[];
+    branches?: SessionBranch[];
   }
 }

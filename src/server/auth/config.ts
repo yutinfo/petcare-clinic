@@ -4,11 +4,54 @@ import bcrypt from "bcryptjs";
 import { TOTP, Secret } from "otpauth";
 import { prisma } from "@/server/db/prisma";
 import { verifyOwnerOtp } from "@/server/auth/otp";
+import { getMigrator } from "@/server/db/migrator";
+import type { SessionBranch } from "@/types/next-auth";
+
+async function loadStaffClaims(userId: string) {
+  const db = getMigrator();
+  const membership = await db.membership.findFirst({
+    where: { userId, status: "ACTIVE" },
+    include: {
+      tenant: true,
+      role: { include: { permissions: true } },
+      branches: true,
+    },
+    orderBy: { createdAt: "asc" },
+  });
+  if (!membership) return null;
+
+  const branchRecords =
+    membership.branches.length > 0
+      ? await db.branch.findMany({
+          where: { id: { in: membership.branches.map((b) => b.branchId) }, isActive: true },
+        })
+      : await db.branch.findMany({
+          where: { tenantId: membership.tenantId, isActive: true },
+        });
+
+  const branches: SessionBranch[] = branchRecords.map((b) => ({
+    id: b.id,
+    code: b.code,
+    name: b.name,
+  }));
+  const defaultBranch =
+    branches.find((b) => b.id === membership.defaultBranchId) ?? branches[0];
+
+  return {
+    tenantId: membership.tenantId,
+    tenantSlug: membership.tenant.slug,
+    tenantName: membership.tenant.displayName,
+    membershipId: membership.id,
+    defaultBranchCode: defaultBranch?.code.toLowerCase(),
+    permissions: membership.role.permissions.map((p) => p.permissionKey),
+    branches,
+  };
+}
 
 export const { handlers, auth, signIn, signOut } = NextAuth({
   trustHost: true,
   session: { strategy: "jwt", maxAge: 60 * 60 * 12 },
-  pages: {},
+  pages: { signIn: "/login" },
   providers: [
     Credentials({
       id: "staff",
@@ -91,8 +134,20 @@ export const { handlers, auth, signIn, signOut } = NextAuth({
     async jwt({ token, user }) {
       if (user) {
         token.sub = user.id;
-        token.kind = (user as { kind?: string }).kind ?? "staff";
+        token.kind = user.kind ?? "staff";
         token.name = user.name;
+        if (user.kind === "staff" && user.id) {
+          const claims = await loadStaffClaims(user.id);
+          if (claims) {
+            token.tenantId = claims.tenantId;
+            token.tenantSlug = claims.tenantSlug;
+            token.tenantName = claims.tenantName;
+            token.membershipId = claims.membershipId;
+            token.defaultBranchCode = claims.defaultBranchCode;
+            token.permissions = claims.permissions;
+            token.branches = claims.branches;
+          }
+        }
       }
       return token;
     },
@@ -100,8 +155,15 @@ export const { handlers, auth, signIn, signOut } = NextAuth({
       session.user = {
         ...session.user,
         id: String(token.sub ?? ""),
-        kind: (token.kind as "staff" | "owner") ?? "staff",
+        kind: token.kind ?? "staff",
         displayName: String(token.name ?? ""),
+        tenantId: token.tenantId,
+        tenantSlug: token.tenantSlug,
+        tenantName: token.tenantName,
+        membershipId: token.membershipId ?? null,
+        defaultBranchCode: token.defaultBranchCode,
+        permissions: token.permissions ?? [],
+        branches: token.branches ?? [],
       };
       return session;
     },

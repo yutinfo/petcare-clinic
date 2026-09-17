@@ -8,6 +8,7 @@ export {
   subtractSatang,
 } from "./money";
 export { bahtText } from "./baht-text";
+export { digitsOnly, generateCode, thNormalize } from "./codes";
 export {
   BANGKOK_TZ,
   bangkokBusinessDate,

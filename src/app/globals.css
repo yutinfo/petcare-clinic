@@ -1,11 +1,20 @@
 @import "tailwindcss";
 
 :root {
-  --background: #fafafa;
-  --foreground: #171717;
+  --background: #f4f1ea;
+  --foreground: #1c1917;
 }
 
 body {
   background: var(--background);
   color: var(--foreground);
+  font-family:
+    "Sarabun",
+    "Noto Sans Thai",
+    system-ui,
+    sans-serif;
+}
+
+html {
+  min-height: 100%;
 }

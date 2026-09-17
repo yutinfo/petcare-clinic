@@ -6,10 +6,11 @@
 > ส่วนไฟล์นี้คือสิ่งที่เปลี่ยนทุกวัน
 
 **อัปเดตล่าสุด:** 2026-09-17
-**เฟสปัจจุบัน:** เฟส 0 — รากฐาน (โครงพร้อม RLS ผ่านเทสแล้ว ยังไม่มีหน้างานคลินิก)
-**สถานะ:** 🟢 เฟส 0 ข้อ 1–10 วางแล้ว — AI ตัวถัดไปรับต่อที่คิวในหัวข้อ 2
+**เฟสปัจจุบัน:** เฟส 0 จบรากฐานแล้ว + prototype หน้าเช็คอินใช้งานได้
+**สถานะ:** 🟢 มีหน้า UI ให้ลอง — login พนักงานแล้วเข้าเคาน์เตอร์รับสัตว์ได้
 
-**AI ตัวถัดไปเริ่มยังไง:** `git pull` → คัดลอก `.env.example` เป็น `.env` → `docker compose up -d` → `npx prisma migrate deploy` → `npx prisma db seed` → อ่านคิวหัวข้อ 2 (ข้อ 11 เป็นต้นไป หรือเส้นทาง B หน้าเช็คอิน)
+**AI ตัวถัดไปเริ่มยังไง:** `git pull` → คัดลอก `.env.example` เป็น `.env` → `docker compose up -d` → `npx prisma migrate deploy` → `npx prisma db seed` → `npm run dev` → เปิด http://localhost:3000
+บัญชีทดลอง: `nune@demo.local` / `demo1234` แล้วค้น `ข้าวปุ้น` หรือ `0812345678`
 
 ---
 
@@ -51,6 +52,17 @@
 | money / bahtText / วันที่ พ.ศ. / DocumentSequence | `src/modules/shared/`, `src/modules/tax/` | ✅ unit 9 tests + int sequence ผ่าน |
 | CI | `.github/workflows/ci.yml` | เขียนแล้ว ยังไม่เห็นผลรันบน GitHub |
 
+### 2026-09-17 — หน้า login + เคาน์เตอร์เช็คอิน
+
+| สิ่งที่ทำ | ไฟล์ | สถานะการตรวจสอบ |
+| --- | --- | --- |
+| หน้า login พนักงาน + OTP เจ้าของสัตว์ | `src/app/login/`, `src/app/portal/` | ✅ ล็อกอิน `nune@demo.local` แล้วได้ cookie จริง |
+| middleware กันหน้า staff ถ้ายังไม่ล็อกอิน + slug จาก host/localhost | `src/middleware.ts`, `src/server/tenancy.ts` | ✅ `/bkk/reception` ไม่มีเซสชัน → 307 `/login` |
+| seed คลินิก `demo` สาขา BKK + นุ่น/หมอเอก + แพร/ข้าวปุ้น | `prisma/seed-demo.ts` | ✅ `prisma db seed` ผ่าน |
+| ค้นหาช่องเดียว (ชื่อ/เบอร์/รหัส) | `src/modules/crm/search-clients.ts` | ✅ int test ผ่าน |
+| สร้างลูกค้าใหม่ 4 ช่อง | `src/modules/crm/create-owner-pet.ts` + ฟอร์มในหน้าเคาน์เตอร์ | เขียนแล้ว ตรวจผ่านหน้า UI ว่าฟอร์มโชว์ |
+| เช็คอิน → Encounter + น้ำหนัก + คิววันนี้ | `src/modules/clinical/check-in.ts`, `src/app/(staff)/[branch]/reception/` | ✅ int test + เปิดเคสจริงได้ `VN-BKK-2569-000001` หน้า encounter แสดงน้ำหนัก/แพ้ยา |
+
 > **บันทึกการแก้จุดบกพร่อง (2026-09-17):** สคีมาฉบับแรกไม่ได้ใส่ `@map` ทำให้ Prisma
 > สร้างคอลัมน์เป็น camelCase (`"tenantId"`) ขณะที่ SQL ทุกไฟล์อ้างเป็น snake_case
 > (`tenant_id`) — RLS policy และ trigger ทั้งหมดจะรันไม่ผ่าน แก้แล้วด้วย
@@ -74,21 +86,21 @@
 4. [x] `prisma migrate deploy` รวม RLS — **พิสูจน์กับ PostgreSQL 16 จริงแล้ว**
 5. [x] `AppContext` + `withTenant` (ไม่ได้ห่อทุก query เป็น transaction ตามตัวอย่างใน docs/01 เพราะช้า — ใช้ `ctx.tx` เป็นทางหลัก)
 6. [x] เทส RLS ด้วย testcontainers
-7. [x] Auth.js สองเส้นทาง + seed บทบาท — ⚠️ ยังไม่มีหน้า login และยังไม่มีเทส authorize
+7. [x] Auth.js สองเส้นทาง + หน้า login — ล็อกอินพนักงานตรวจด้วย HTTP จริงแล้ว
 8. [x] `AuditLog` helper + `drainOutbox` — ⚠️ ยังไม่ได้รัน worker ค้างกับ Redis
 9. [x] ยูทิลิตี้เงิน/วันที่/`bahtText`/`DocumentSequence`
 10. [x] CI workflow — ⚠️ ยังไม่เห็นผลรันบน GitHub
-11. [ ] หน้า login พนักงาน + ขอ OTP เจ้าของสัตว์
-12. [ ] middleware แปลง subdomain → `tenantId` แล้วใส่ context
+11. [x] หน้า login พนักงาน + ขอ OTP เจ้าของสัตว์
+12. [x] middleware — localhost ใช้ `DEV_TENANT_SLUG=demo`; subdomain ใช้ slug จริง
 13. [ ] Playwright (`test:e2e` ยังไม่มีแพ็กเกจ)
-14. [ ] seed คลินิกตัวอย่าง (tenant/สาขา/ผู้ใช้ staff) สำหรับพัฒนาหน้าจอ — ตอนนี้ seed มีแค่ข้อมูลอ้างอิงกลาง
+14. [x] seed คลินิกตัวอย่าง (นุ่น, หมอเอก, แพร/ข้าวปุ้น + เจ้าของอีก 20 คน)
 
-**เส้นทาง B — prototype หน้าเช็คอิน (งานถัดไปหลังรากฐาน ตาม docs/10 §10)**
-1. [ ] Next.js ขั้นต่ำ + Prisma + Postgres ในเครื่อง
-2. [ ] Seed ข้อมูลปลอม: เจ้าของ 500 คน สัตว์ 800 ตัว
-3. [ ] หน้าค้นหาช่องเดียว (เบอร์/ชื่อเจ้าของ/ชื่อสัตว์/รหัส) ด้วย `pg_trgm`
-4. [ ] ฟอร์มสร้างลูกค้าใหม่แบบกรอกขั้นต่ำ 4 ช่อง
-5. [ ] เช็คอิน → สร้าง `Encounter` + บันทึกน้ำหนัก
+**เส้นทาง B — prototype หน้าเช็คอิน**
+1. [x] Next.js + Prisma + Postgres ในเครื่อง
+2. [ ] Seed ข้อมูลปลอม 500/800 — ตอนนี้มีตัวอย่าง ~20 รายเพื่อให้หน้าใช้งานได้ (ยังไม่ถึง 500)
+3. [x] หน้าค้นหาช่องเดียว
+4. [x] ฟอร์มสร้างลูกค้าใหม่ 4 ช่อง
+5. [x] เช็คอิน → Encounter + น้ำหนัก
 6. [ ] **จับเวลากับเจ้าหน้าที่จริง: เปิดเคส walk-in ต้องเสร็จใน 60 วินาที**
 
 > รากฐานพร้อมแล้ว งานที่มีคุณค่าต่อคลินิกคือหน้าเช็คอิน
@@ -145,6 +157,7 @@
 | 2026-09-17 | เริ่มเฟส 0 (เส้นทาง A) ก่อน prototype หน้าเช็คอิน | ผู้ใช้สั่งให้ทำตามเอกสาร และจะมี AI หลายตัวช่วยกัน | ผู้ใช้ |
 | 2026-09-17 | ย้าย SQL RLS จาก `prisma/migrations/manual/` เป็น migration ที่สอง | Prisma ถือทุกโฟลเดอร์ใต้ `migrations/` เป็น migration ทำให้ `migrate deploy` พัง | AI |
 | 2026-09-17 | รูป MinIO ใช้ `quay.io/minio/minio` | `minio/minio` บน Docker Hub ถูกปฏิเสธตอน pull | AI |
+| 2026-09-17 | localhost ใช้ `DEV_TENANT_SLUG=demo` แทน subdomain | เครื่องพัฒนาไม่มี `demo.petcare.app` | AI |
 
 ---
 

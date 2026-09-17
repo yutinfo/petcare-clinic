@@ -116,6 +116,7 @@ npm test                     # unit (ไม่ต้องมี Docker)
 npm run test:int             # integration + RLS กับ Postgres จริง (testcontainers)
 npm run build
 npm run db:check-rls         # v_rls_coverage_gaps ต้องว่าง
+npm run dev                  # http://localhost:3000 — nune@demo.local / demo1234
 ```
 
 > บน Windows/PowerShell ใช้ `$env:DATABASE_URL="..."` แยกบรรทัดก่อน แล้วค่อยเรียก `npx`

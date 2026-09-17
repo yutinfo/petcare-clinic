@@ -5,6 +5,7 @@ import {
   SYSTEM_ROLE_PERMISSIONS,
   SYSTEM_ROLES,
 } from "../src/modules/identity/permissions";
+import { seedDemoClinic } from "./seed-demo";
 
 const prisma = new PrismaClient({
   datasources: {
@@ -105,6 +106,8 @@ async function main() {
       }
     }
   }
+
+  await seedDemoClinic(prisma);
 }
 
 main()
