@@ -1,0 +1,19 @@
+---
+description: บริบทหลักของโปรเจกต์ PetCare Cloud
+alwaysApply: true
+---
+
+อ่าน `AGENTS.md` ที่รากโปรเจกต์ก่อนตอบทุกครั้ง — เป็นแหล่งความจริงเดียวสำหรับกติกา
+สแต็ก โครงสร้างโค้ด invariants และกับดักเฉพาะโดเมน
+จากนั้นอ่าน `docs/STATUS.md` เพื่อดูว่างานไปถึงไหนแล้ว
+
+@AGENTS.md
+@docs/STATUS.md
+
+ข้อห้ามที่ละเมิดไม่ได้ (รายละเอียดใน AGENTS.md §3):
+- เงินเก็บเป็น Int หน่วยสตางค์ ห้าม Float
+- VAT คำนวณที่ระดับบิล ไม่ใช่ระดับบรรทัด
+- Invoice ที่พ้น DRAFT และ SoapNote ที่ลงนามแล้ว ห้ามแก้
+- StockMovement / AuditLog / InvoiceLine เป็น append-only
+- ทุกตารางที่มี tenant_id ต้องมี RLS policy
+- ฟิลด์ใหม่ในสคีมาต้องใส่ @map("snake_case")

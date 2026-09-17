@@ -1,0 +1,2087 @@
+// ============================================================================
+// PetCare Cloud — ระบบบริหารจัดการคลินิกสัตว์เลี้ยง
+// สคีมาฉบับร่าง — ดูคำอธิบายเหตุผลที่ docs/02-data-model.md
+//
+// กติกาที่ใช้ตลอดไฟล์นี้
+//  1. tenantId / branchId / *ById (ผู้ใช้งาน) เก็บเป็น scalar ล้วน ไม่ประกาศ relation
+//     เพื่อไม่ให้ Tenant/Branch/Membership มี back-relation หลายสิบตัวจนอ่านไม่ออก
+//     >> FOREIGN KEY และ RLS POLICY ของฟิลด์เหล่านี้สร้างใน migration SQL แยก
+//     (prisma/migrations/manual/001_rls_and_constraints.sql)
+//  2. เงินเป็น Int หน่วย "สตางค์" ชื่อฟิลด์ลงท้าย Satang เสมอ
+//  3. ปริมาณสต็อก/ขนาดยาเป็น Decimal(14,4) หน่วยฐานของสินค้านั้น
+//  4. เวลาเป็น timestamptz (UTC) — แปลงเป็น Asia/Bangkok ที่ชั้นแสดงผล
+//  5. ชื่อตาราง = PascalCase, ชื่อคอลัมน์ = snake_case ผ่าน @map, ฟิลด์ TS = camelCase
+//     ฟิลด์ใหม่ทุกตัวต้องใส่ @map("snake_case") มิฉะนั้น RLS policy และ trigger
+//     ที่อ้างชื่อ snake_case จะพังเงียบ ๆ
+// ============================================================================
+
+generator client {
+  provider        = "prisma-client-js"
+  previewFeatures = ["postgresqlExtensions", "relationJoins"]
+}
+
+datasource db {
+  provider   = "postgresql"
+  url        = env("DATABASE_URL")
+  extensions = [pgcrypto, pg_trgm, btree_gist]
+}
+
+// ============================================================================
+// PLATFORM / IDENTITY
+// ============================================================================
+
+enum TenantStatus {
+  TRIAL
+  ACTIVE
+  SUSPENDED
+  CLOSED
+}
+
+model Tenant {
+  id          String       @id @default(uuid(7)) @db.Uuid
+  slug        String       @unique // ใช้เป็น subdomain: clinicA.petcare.app
+  legalName   String       @map("legal_name") // ชื่อนิติบุคคลตามหนังสือรับรอง
+  displayName String       @map("display_name")
+  taxId       String?      @map("tax_id") // เลขประจำตัวผู้เสียภาษี 13 หลัก
+  logoKey     String?      @map("logo_key")
+  status      TenantStatus @default(TRIAL)
+  locale      String       @default("th")
+  timezone    String       @default("Asia/Bangkok")
+  createdAt   DateTime     @default(now()) @map("created_at") @db.Timestamptz
+  updatedAt   DateTime     @updatedAt @map("updated_at") @db.Timestamptz
+
+  branches     Branch[]
+  memberships  Membership[]
+  subscription Subscription?
+}
+
+model Branch {
+  id            String  @id @default(uuid(7)) @db.Uuid
+  tenantId      String  @map("tenant_id") @db.Uuid
+  tenant        Tenant  @relation(fields: [tenantId], references: [id])
+  code          String // ใช้ในเลขที่เอกสาร เช่น BKK
+  name          String
+  addressLine   String? @map("address_line")
+  subDistrict   String? @map("sub_district")
+  district      String?
+  province      String?
+  postalCode    String? @map("postal_code")
+  phone         String?
+  isHeadOffice  Boolean @default(false) @map("is_head_office")
+  taxBranchCode String  @default("00000") @map("tax_branch_code") // "00000" = สำนักงานใหญ่
+  openTimeJson  Json?   @map("open_time_json") // เวลาทำการรายวัน
+  isActive      Boolean @default(true) @map("is_active")
+
+  taxProfile TaxProfile?
+
+  @@unique([tenantId, code])
+}
+
+enum UserStatus {
+  INVITED
+  ACTIVE
+  DISABLED
+}
+
+/// บัญชีผู้ใช้ระดับแพลตฟอร์ม — คนเดียวเป็นพนักงานได้หลายคลินิก
+model User {
+  id             String     @id @default(uuid(7)) @db.Uuid
+  email          String?    @unique
+  phone          String?    @unique // เจ้าของสัตว์ล็อกอินด้วย OTP เบอร์โทร
+  passwordHash   String?    @map("password_hash")
+  displayName    String     @map("display_name")
+  avatarKey      String?    @map("avatar_key")
+  status         UserStatus @default(INVITED)
+  mfaSecret      String?    @map("mfa_secret") // TOTP (เข้ารหัสที่ชั้นแอป)
+  mfaEnabledAt   DateTime?  @map("mfa_enabled_at") @db.Timestamptz
+  lastLoginAt    DateTime?  @map("last_login_at") @db.Timestamptz
+  isPlatformRoot Boolean    @default(false) @map("is_platform_root")
+  createdAt      DateTime   @default(now()) @map("created_at") @db.Timestamptz
+
+  memberships  Membership[]
+  ownerProfile Owner?
+}
+
+enum MembershipStatus {
+  INVITED
+  ACTIVE
+  SUSPENDED
+  LEFT
+}
+
+/// การเป็นพนักงานของคลินิกหนึ่ง — เป็น "ตัวตนผู้ปฏิบัติงาน" ที่โมดูลอื่นอ้างถึง
+model Membership {
+  id              String           @id @default(uuid(7)) @db.Uuid
+  tenantId        String           @map("tenant_id") @db.Uuid
+  tenant          Tenant           @relation(fields: [tenantId], references: [id])
+  userId          String           @map("user_id") @db.Uuid
+  user            User             @relation(fields: [userId], references: [id])
+  roleId          String           @map("role_id") @db.Uuid
+  role            Role             @relation(fields: [roleId], references: [id])
+  status          MembershipStatus @default(INVITED)
+  employeeCode    String?          @map("employee_code")
+  jobTitle        String?          @map("job_title")
+  licenseNo       String?          @map("license_no") // เลขใบอนุญาตประกอบวิชาชีพการสัตวแพทย์
+  signatureKey    String?          @map("signature_key") // ลายเซ็นดิจิทัลสำหรับใบรับรอง
+  defaultBranchId String?          @map("default_branch_id") @db.Uuid
+  createdAt       DateTime         @default(now()) @map("created_at") @db.Timestamptz
+
+  branches MembershipBranch[]
+
+  @@unique([tenantId, userId])
+  @@index([tenantId, status])
+}
+
+model MembershipBranch {
+  membershipId String     @map("membership_id") @db.Uuid
+  membership   Membership @relation(fields: [membershipId], references: [id], onDelete: Cascade)
+  branchId     String     @map("branch_id") @db.Uuid
+
+  @@id([membershipId, branchId])
+}
+
+model Role {
+  id       String  @id @default(uuid(7)) @db.Uuid
+  tenantId String? @map("tenant_id") @db.Uuid // null = บทบาทสำเร็จรูปของระบบ
+  key      String // VET, RECEPTIONIST, GROOMER, ...
+  name     String
+  isSystem Boolean @default(false) @map("is_system")
+
+  permissions RolePermission[]
+  memberships Membership[]
+
+  @@unique([tenantId, key])
+}
+
+model Permission {
+  key         String @id // "clinical:write", "billing:void_invoice"
+  group       String
+  description String
+
+  roles RolePermission[]
+}
+
+model RolePermission {
+  roleId        String     @map("role_id") @db.Uuid
+  role          Role       @relation(fields: [roleId], references: [id], onDelete: Cascade)
+  permissionKey String     @map("permission_key")
+  permission    Permission @relation(fields: [permissionKey], references: [key])
+
+  @@id([roleId, permissionKey])
+}
+
+/// เขียนอย่างเดียว — trigger ห้าม UPDATE/DELETE
+model AuditLog {
+  id            String   @id @default(uuid(7)) @db.Uuid
+  tenantId      String?  @map("tenant_id") @db.Uuid
+  branchId      String?  @map("branch_id") @db.Uuid
+  actorUserId   String?  @map("actor_user_id") @db.Uuid
+  actorMemberId String?  @map("actor_member_id") @db.Uuid
+  action        String // "encounter.close", "invoice.void"
+  entityType    String   @map("entity_type")
+  entityId      String?  @map("entity_id")
+  before        Json?
+  after         Json?
+  reason        String?
+  ipAddress     String?  @map("ip_address")
+  userAgent     String?  @map("user_agent")
+  occurredAt    DateTime @default(now()) @map("occurred_at") @db.Timestamptz
+
+  @@index([tenantId, entityType, entityId])
+  @@index([tenantId, occurredAt])
+}
+
+/// Transactional outbox — เขียนพร้อมข้อมูลจริงในทรานแซกชันเดียว แล้ว worker ค่อยดึงไปทำ
+model OutboxEvent {
+  id          String    @id @default(uuid(7)) @db.Uuid
+  tenantId    String    @map("tenant_id") @db.Uuid
+  type        String
+  payload     Json
+  createdAt   DateTime  @default(now()) @map("created_at") @db.Timestamptz
+  processedAt DateTime? @map("processed_at") @db.Timestamptz
+  attempts    Int       @default(0)
+  lastError   String?   @map("last_error")
+
+  @@index([processedAt, createdAt])
+}
+
+// ============================================================================
+// SAAS
+// ============================================================================
+
+model Plan {
+  key         String   @id
+  name        String
+  priceSatang Int      @map("price_satang")
+  maxBranches Int      @map("max_branches")
+  maxStaff    Int      @map("max_staff")
+  features    String[]
+  isActive    Boolean  @default(true) @map("is_active")
+
+  subscriptions Subscription[]
+}
+
+model Subscription {
+  id               String    @id @default(uuid(7)) @db.Uuid
+  tenantId         String    @unique @map("tenant_id") @db.Uuid
+  tenant           Tenant    @relation(fields: [tenantId], references: [id])
+  planKey          String    @map("plan_key")
+  plan             Plan      @relation(fields: [planKey], references: [key])
+  status           String    @default("TRIALING")
+  seats            Int       @default(5)
+  startedAt        DateTime  @default(now()) @map("started_at") @db.Timestamptz
+  trialEndsAt      DateTime? @map("trial_ends_at") @db.Timestamptz
+  currentPeriodEnd DateTime? @map("current_period_end") @db.Timestamptz
+  cancelAt         DateTime? @map("cancel_at") @db.Timestamptz
+}
+
+model FeatureFlag {
+  id       String  @id @default(uuid(7)) @db.Uuid
+  tenantId String? @map("tenant_id") @db.Uuid
+  key      String
+  enabled  Boolean @default(false)
+  payload  Json?
+
+  @@unique([tenantId, key])
+}
+
+// ============================================================================
+// CRM — เจ้าของสัตว์
+// ============================================================================
+
+model Owner {
+  id                String    @id @default(uuid(7)) @db.Uuid
+  tenantId          String    @map("tenant_id") @db.Uuid
+  code              String // O-4K7Q2 — ใช้พูดกับลูกค้า
+  prefix            String? // นาย/นาง/นางสาว
+  firstName         String    @map("first_name")
+  lastName          String?   @map("last_name")
+  nickname          String?
+  searchKey         String    @map("search_key") // normalize แล้ว ใช้กับ pg_trgm
+  email             String?
+  lineUserId        String?   @map("line_user_id")
+  addressLine       String?   @map("address_line")
+  subDistrict       String?   @map("sub_district")
+  district          String?
+  province          String?
+  postalCode        String?   @map("postal_code")
+  taxId             String?   @map("tax_id") // สำหรับออกใบกำกับภาษีเต็มรูป
+  taxBranchCode     String?   @map("tax_branch_code")
+  idCardNoEnc       String?   @map("id_card_no_enc") // เข้ารหัสที่ชั้นแอป เก็บเฉพาะเมื่อจำเป็น
+  note              String?
+  isBlocked         Boolean   @default(false) @map("is_blocked")
+  blockReason       String?   @map("block_reason")
+  creditLimitSatang Int       @default(0) @map("credit_limit_satang")
+  referralSource    String?   @map("referral_source")
+  userId            String?   @unique @map("user_id") @db.Uuid // บัญชีพอร์ทัล (ถ้าเปิดใช้)
+  user              User?     @relation(fields: [userId], references: [id])
+  createdAt         DateTime  @default(now()) @map("created_at") @db.Timestamptz
+  updatedAt         DateTime  @updatedAt @map("updated_at") @db.Timestamptz
+  deletedAt         DateTime? @map("deleted_at") @db.Timestamptz
+
+  phones       OwnerPhone[]
+  consents     OwnerConsent[]
+  pets         Pet[]
+  bookings     Booking[]
+  encounters   Encounter[]
+  stays        Stay[]
+  groomingJobs GroomingJob[]
+  chargeItems  ChargeItem[]
+  invoices     Invoice[]
+  deposits     Deposit[]
+  posSales     PosSale[]
+
+  @@unique([tenantId, code])
+  @@index([tenantId, lastName, firstName])
+}
+
+model OwnerPhone {
+  id        String  @id @default(uuid(7)) @db.Uuid
+  tenantId  String  @map("tenant_id") @db.Uuid
+  ownerId   String  @map("owner_id") @db.Uuid
+  owner     Owner   @relation(fields: [ownerId], references: [id], onDelete: Cascade)
+  label     String  @default("มือถือ")
+  raw       String
+  digits    String // ตัวเลขล้วน ใช้ค้นด้วย 4 ตัวท้าย
+  isPrimary Boolean @default(false) @map("is_primary")
+
+  @@index([tenantId, digits])
+}
+
+enum ConsentType {
+  PDPA_GENERAL
+  MARKETING
+  PHOTO_SHARING
+  MEDICAL_DISCLOSURE
+}
+
+model OwnerConsent {
+  id          String      @id @default(uuid(7)) @db.Uuid
+  tenantId    String      @map("tenant_id") @db.Uuid
+  ownerId     String      @map("owner_id") @db.Uuid
+  owner       Owner       @relation(fields: [ownerId], references: [id], onDelete: Cascade)
+  type        ConsentType
+  version     String // เวอร์ชันของข้อความคำยินยอมที่ลูกค้าเห็น
+  grantedAt   DateTime?   @map("granted_at") @db.Timestamptz
+  revokedAt   DateTime?   @map("revoked_at") @db.Timestamptz
+  channel     String // WEB, PAPER, IN_APP
+  evidenceKey String?     @map("evidence_key") // ไฟล์สแกน/ลายเซ็น
+
+  @@index([tenantId, ownerId, type])
+}
+
+// ============================================================================
+// PATIENT — สัตว์เลี้ยง
+// ============================================================================
+
+model Species {
+  id       String  @id @default(uuid(7)) @db.Uuid
+  tenantId String? @map("tenant_id") @db.Uuid // null = ข้อมูลกลางของระบบ
+  code     String
+  nameTh   String  @map("name_th")
+  nameEn   String  @map("name_en")
+  isActive Boolean @default(true) @map("is_active")
+
+  breeds Breed[]
+  pets   Pet[]
+
+  @@unique([tenantId, code])
+}
+
+model Breed {
+  id        String  @id @default(uuid(7)) @db.Uuid
+  tenantId  String? @map("tenant_id") @db.Uuid
+  speciesId String  @map("species_id") @db.Uuid
+  species   Species @relation(fields: [speciesId], references: [id])
+  nameTh    String  @map("name_th")
+  nameEn    String? @map("name_en")
+  isActive  Boolean @default(true) @map("is_active")
+
+  pets Pet[]
+
+  @@index([speciesId, nameTh])
+}
+
+enum PetSex {
+  MALE
+  FEMALE
+  UNKNOWN
+}
+
+enum PetStatus {
+  ACTIVE
+  DECEASED
+  TRANSFERRED_OUT
+  LOST
+}
+
+model Pet {
+  id                  String    @id @default(uuid(7)) @db.Uuid
+  tenantId            String    @map("tenant_id") @db.Uuid
+  code                String // P-8F3K2
+  ownerId             String    @map("owner_id") @db.Uuid
+  owner               Owner     @relation(fields: [ownerId], references: [id])
+  name                String
+  searchKey           String    @map("search_key")
+  speciesId           String    @map("species_id") @db.Uuid
+  species             Species   @relation(fields: [speciesId], references: [id])
+  breedId             String?   @map("breed_id") @db.Uuid
+  breed               Breed?    @relation(fields: [breedId], references: [id])
+  sex                 PetSex    @default(UNKNOWN)
+  isNeutered          Boolean   @default(false) @map("is_neutered")
+  neuteredAt          DateTime? @map("neutered_at") @db.Date
+  birthDate           DateTime? @map("birth_date") @db.Date
+  birthDateIsEstimate Boolean   @default(false) @map("birth_date_is_estimate")
+  colorMarkings       String?   @map("color_markings")
+  microchipNo         String?   @map("microchip_no")
+  microchipAt         DateTime? @map("microchip_at") @db.Date
+  bloodType           String?   @map("blood_type")
+  photoKey            String?   @map("photo_key")
+  insuranceProvider   String?   @map("insurance_provider")
+  insurancePolicyNo   String?   @map("insurance_policy_no")
+  /// cache สำหรับแสดงผล — ข้อมูลจริงอยู่ที่ PetWeight
+  currentWeightKg     Decimal?  @map("current_weight_kg") @db.Decimal(8, 3)
+  currentWeightAt     DateTime? @map("current_weight_at") @db.Timestamptz
+  status              PetStatus @default(ACTIVE)
+  deceasedAt          DateTime? @map("deceased_at") @db.Date
+  deceasedCause       String?   @map("deceased_cause")
+  note                String?
+  createdAt           DateTime  @default(now()) @map("created_at") @db.Timestamptz
+  updatedAt           DateTime  @updatedAt @map("updated_at") @db.Timestamptz
+  deletedAt           DateTime? @map("deleted_at") @db.Timestamptz
+
+  weights            PetWeight[]
+  alerts             PetAlert[]
+  vaccinations       Vaccination[]
+  ownerHistory       PetOwnerHistory[]
+  bookings           Booking[]
+  encounters         Encounter[]
+  stays              Stay[]
+  groomingJobs       GroomingJob[]
+  groomingPreference GroomingPreference?
+  problems           Problem[]
+  prescriptions      Prescription[]
+  chargeItems        ChargeItem[]
+  consentForms       ConsentForm[]
+
+  @@unique([tenantId, code])
+  @@index([tenantId, ownerId])
+  @@index([tenantId, microchipNo])
+}
+
+model PetWeight {
+  id                 String     @id @default(uuid(7)) @db.Uuid
+  tenantId           String     @map("tenant_id") @db.Uuid
+  petId              String     @map("pet_id") @db.Uuid
+  pet                Pet        @relation(fields: [petId], references: [id], onDelete: Cascade)
+  encounterId        String?    @map("encounter_id") @db.Uuid
+  encounter          Encounter? @relation(fields: [encounterId], references: [id])
+  measuredAt         DateTime   @map("measured_at") @db.Timestamptz
+  weightKg           Decimal    @map("weight_kg") @db.Decimal(8, 3)
+  bodyConditionScore Int?       @map("body_condition_score") // 1-9
+  source             String     @default("CLINIC_SCALE")
+  recordedById       String?    @map("recorded_by_id") @db.Uuid
+
+  @@index([petId, measuredAt])
+}
+
+enum PetAlertType {
+  ALLERGY
+  CHRONIC_CONDITION
+  BEHAVIOUR // ดุ กัด ต้องใส่ตะกร้อ
+  DRUG_REACTION
+  DIET
+  OTHER
+}
+
+/// แสดงเป็นแถบเตือนสีแดงบนหัวจอทุกหน้าที่เกี่ยวกับสัตว์ตัวนี้
+model PetAlert {
+  id          String       @id @default(uuid(7)) @db.Uuid
+  tenantId    String       @map("tenant_id") @db.Uuid
+  petId       String       @map("pet_id") @db.Uuid
+  pet         Pet          @relation(fields: [petId], references: [id], onDelete: Cascade)
+  type        PetAlertType
+  severity    String       @default("MEDIUM") // LOW | MEDIUM | HIGH
+  label       String
+  detail      String?
+  activeFrom  DateTime     @default(now()) @map("active_from") @db.Timestamptz
+  activeTo    DateTime?    @map("active_to") @db.Timestamptz
+  createdById String?      @map("created_by_id") @db.Uuid
+
+  @@index([petId, activeTo])
+}
+
+model PetOwnerHistory {
+  id            String   @id @default(uuid(7)) @db.Uuid
+  tenantId      String   @map("tenant_id") @db.Uuid
+  petId         String   @map("pet_id") @db.Uuid
+  pet           Pet      @relation(fields: [petId], references: [id], onDelete: Cascade)
+  fromOwnerId   String?  @map("from_owner_id") @db.Uuid
+  toOwnerId     String   @map("to_owner_id") @db.Uuid
+  transferredAt DateTime @default(now()) @map("transferred_at") @db.Timestamptz
+  reason        String?
+  recordedById  String?  @map("recorded_by_id") @db.Uuid
+}
+
+model Vaccination {
+  id               String     @id @default(uuid(7)) @db.Uuid
+  tenantId         String     @map("tenant_id") @db.Uuid
+  branchId         String     @map("branch_id") @db.Uuid
+  petId            String     @map("pet_id") @db.Uuid
+  pet              Pet        @relation(fields: [petId], references: [id], onDelete: Cascade)
+  encounterId      String?    @map("encounter_id") @db.Uuid
+  encounter        Encounter? @relation(fields: [encounterId], references: [id])
+  productId        String?    @map("product_id") @db.Uuid
+  product          Product?   @relation(fields: [productId], references: [id])
+  vaccineName      String     @map("vaccine_name")
+  vaccineType      String?    @map("vaccine_type") // RABIES, DHPPL, FVRCP, ...
+  lotNo            String?    @map("lot_no")
+  expiryDate       DateTime?  @map("expiry_date") @db.Date
+  administeredAt   DateTime   @map("administered_at") @db.Timestamptz
+  administeredById String?    @map("administered_by_id") @db.Uuid
+  injectionSite    String?    @map("injection_site")
+  nextDueAt        DateTime?  @map("next_due_at") @db.Date
+  certificateNo    String?    @map("certificate_no") // เลขที่ใบรับรองการฉีดวัคซีน
+  certificateKey   String?    @map("certificate_key")
+  note             String?
+
+  @@index([tenantId, petId, administeredAt])
+  @@index([tenantId, nextDueAt])
+}
+
+// ============================================================================
+// SCHEDULING — ทรัพยากรและการจอง
+// ============================================================================
+
+enum ResourceType {
+  VET
+  VET_TECH
+  GROOMER
+  EXAM_ROOM
+  GROOMING_STATION
+  KENNEL // กรง/ห้องฝาก/ห้องผู้ป่วยใน
+  EQUIPMENT // เครื่องอัลตราซาวด์ ห้องผ่าตัด
+}
+
+/// ทุกอย่างที่ "จองเวลาได้" ใช้ตารางนี้ร่วมกัน
+model Resource {
+  id           String       @id @default(uuid(7)) @db.Uuid
+  tenantId     String       @map("tenant_id") @db.Uuid
+  branchId     String       @map("branch_id") @db.Uuid
+  type         ResourceType
+  code         String
+  name         String
+  membershipId String?      @map("membership_id") @db.Uuid // ถ้าทรัพยากรนี้คือคน
+  capacity     Int          @default(1)
+  colorHex     String?      @map("color_hex")
+  sortOrder    Int          @default(0) @map("sort_order")
+  isActive     Boolean      @default(true) @map("is_active")
+
+  kennelProfile    KennelProfile?
+  shifts           ResourceShift[]
+  timeOffs         ResourceTimeOff[]
+  bookingResources BookingResource[]
+  stays            Stay[]
+  groomingJobs     GroomingJob[]
+
+  @@unique([tenantId, branchId, code])
+  @@index([tenantId, branchId, type, isActive])
+}
+
+enum KennelSize {
+  SMALL
+  MEDIUM
+  LARGE
+  XLARGE
+  CAT_CONDO
+  ISOLATION // ห้องแยกโรคติดต่อ
+  ICU
+}
+
+model KennelProfile {
+  resourceId          String     @id @map("resource_id") @db.Uuid
+  resource            Resource   @relation(fields: [resourceId], references: [id], onDelete: Cascade)
+  tenantId            String     @map("tenant_id") @db.Uuid
+  size                KennelSize
+  zone                String? // โซนแมว / โซนสุนัข / ไอซียู
+  allowedSpeciesCodes String[]   @map("allowed_species_codes")
+  /// true = ให้สัตว์บ้านเดียวกันอยู่ร่วมกรงได้ (ปิดการกันจองซ้อนแบบเข้มงวด)
+  allowSharing        Boolean    @default(false) @map("allow_sharing")
+  maxOccupancy        Int        @default(1) @map("max_occupancy")
+  dailyRateServiceId  String?    @map("daily_rate_service_id") @db.Uuid // ServiceItem ที่ใช้คิดค่าห้องต่อคืน
+  features            String[] // กล้องวงจรปิด, แอร์, หน้าต่าง
+  isOutOfService      Boolean    @default(false) @map("is_out_of_service")
+  outOfServiceReason  String?    @map("out_of_service_reason")
+}
+
+/// เวลาทำการของทรัพยากรแต่ละตัว (0 = อาทิตย์)
+model ResourceShift {
+  id            String    @id @default(uuid(7)) @db.Uuid
+  tenantId      String    @map("tenant_id") @db.Uuid
+  resourceId    String    @map("resource_id") @db.Uuid
+  resource      Resource  @relation(fields: [resourceId], references: [id], onDelete: Cascade)
+  weekday       Int
+  startTime     String    @map("start_time") // "09:00" เวลาท้องถิ่นของสาขา
+  endTime       String    @map("end_time") // "18:00"
+  slotMinutes   Int       @default(30) @map("slot_minutes")
+  effectiveFrom DateTime? @map("effective_from") @db.Date
+  effectiveTo   DateTime? @map("effective_to") @db.Date
+
+  @@index([resourceId, weekday])
+}
+
+model ResourceTimeOff {
+  id         String   @id @default(uuid(7)) @db.Uuid
+  tenantId   String   @map("tenant_id") @db.Uuid
+  resourceId String   @map("resource_id") @db.Uuid
+  resource   Resource @relation(fields: [resourceId], references: [id], onDelete: Cascade)
+  startAt    DateTime @map("start_at") @db.Timestamptz
+  endAt      DateTime @map("end_at") @db.Timestamptz
+  reason     String?
+
+  @@index([resourceId, startAt])
+}
+
+enum BookingType {
+  CONSULT // ตรวจรักษา
+  VACCINE
+  FOLLOW_UP
+  SURGERY
+  GROOMING
+  BOARDING
+  OTHER
+}
+
+enum BookingStatus {
+  REQUESTED // มาจากพอร์ทัล รออนุมัติ
+  CONFIRMED
+  CHECKED_IN
+  COMPLETED
+  CANCELLED
+  NO_SHOW
+}
+
+enum BookingSource {
+  STAFF
+  PORTAL
+  PHONE
+  WALK_IN
+  LINE
+}
+
+model Booking {
+  id                    String        @id @default(uuid(7)) @db.Uuid
+  tenantId              String        @map("tenant_id") @db.Uuid
+  branchId              String        @map("branch_id") @db.Uuid
+  code                  String
+  type                  BookingType
+  status                BookingStatus @default(CONFIRMED)
+  source                BookingSource @default(STAFF)
+  ownerId               String        @map("owner_id") @db.Uuid
+  owner                 Owner         @relation(fields: [ownerId], references: [id])
+  petId                 String?       @map("pet_id") @db.Uuid
+  pet                   Pet?          @relation(fields: [petId], references: [id])
+  startAt               DateTime      @map("start_at") @db.Timestamptz
+  endAt                 DateTime      @map("end_at") @db.Timestamptz
+  /// สำหรับ BOARDING — จำนวนคืนที่ตั้งใจฝาก
+  expectedNights        Int?          @map("expected_nights")
+  requestedNote         String?       @map("requested_note") // ลูกค้าพิมพ์มา
+  internalNote          String?       @map("internal_note")
+  depositRequiredSatang Int           @default(0) @map("deposit_required_satang")
+  depositPaidSatang     Int           @default(0) @map("deposit_paid_satang")
+  createdById           String?       @map("created_by_id") @db.Uuid
+  confirmedAt           DateTime?     @map("confirmed_at") @db.Timestamptz
+  confirmedById         String?       @map("confirmed_by_id") @db.Uuid
+  cancelledAt           DateTime?     @map("cancelled_at") @db.Timestamptz
+  cancelledById         String?       @map("cancelled_by_id") @db.Uuid
+  cancelReason          String?       @map("cancel_reason")
+  remindedAt            DateTime?     @map("reminded_at") @db.Timestamptz
+  createdAt             DateTime      @default(now()) @map("created_at") @db.Timestamptz
+  updatedAt             DateTime      @updatedAt @map("updated_at") @db.Timestamptz
+
+  items       BookingItem[]
+  resources   BookingResource[]
+  encounter   Encounter?
+  stay        Stay?
+  groomingJob GroomingJob?
+  chargeItems ChargeItem[]
+
+  @@unique([tenantId, code])
+  @@index([tenantId, branchId, startAt])
+  @@index([tenantId, ownerId, startAt])
+  @@index([tenantId, status, startAt])
+}
+
+model BookingItem {
+  id            String      @id @default(uuid(7)) @db.Uuid
+  tenantId      String      @map("tenant_id") @db.Uuid
+  bookingId     String      @map("booking_id") @db.Uuid
+  booking       Booking     @relation(fields: [bookingId], references: [id], onDelete: Cascade)
+  serviceItemId String      @map("service_item_id") @db.Uuid
+  serviceItem   ServiceItem @relation(fields: [serviceItemId], references: [id])
+  qty           Decimal     @default(1) @db.Decimal(10, 2)
+  note          String?
+}
+
+/// การกันเวลาทรัพยากร — มี EXCLUDE constraint กันจองซ้อนที่ชั้น DB
+/// (ดู migration: no_double_booking)
+model BookingResource {
+  id         String   @id @default(uuid(7)) @db.Uuid
+  tenantId   String   @map("tenant_id") @db.Uuid
+  bookingId  String   @map("booking_id") @db.Uuid
+  booking    Booking  @relation(fields: [bookingId], references: [id], onDelete: Cascade)
+  resourceId String   @map("resource_id") @db.Uuid
+  resource   Resource @relation(fields: [resourceId], references: [id])
+  startAt    DateTime @map("start_at") @db.Timestamptz
+  endAt      DateTime @map("end_at") @db.Timestamptz
+  status     String   @default("ACTIVE") // ACTIVE | CANCELLED
+
+  @@index([resourceId, startAt, endAt])
+}
+
+model WaitlistEntry {
+  id            String      @id @default(uuid(7)) @db.Uuid
+  tenantId      String      @map("tenant_id") @db.Uuid
+  branchId      String      @map("branch_id") @db.Uuid
+  ownerId       String      @map("owner_id") @db.Uuid
+  petId         String?     @map("pet_id") @db.Uuid
+  type          BookingType
+  preferredFrom DateTime    @map("preferred_from") @db.Timestamptz
+  preferredTo   DateTime    @map("preferred_to") @db.Timestamptz
+  note          String?
+  status        String      @default("WAITING")
+  notifiedAt    DateTime?   @map("notified_at") @db.Timestamptz
+  createdAt     DateTime    @default(now()) @map("created_at") @db.Timestamptz
+
+  @@index([tenantId, branchId, status, preferredFrom])
+}
+
+// ============================================================================
+// CLINICAL — เวชระเบียน
+// ============================================================================
+
+enum EncounterType {
+  OPD // ผู้ป่วยนอก
+  IPD // ผู้ป่วยใน
+  EMERGENCY
+  VACCINE
+  SURGERY
+  RECHECK
+}
+
+enum EncounterStatus {
+  WAITING // เช็คอินแล้ว รอเรียก
+  IN_PROGRESS
+  PENDING_RESULT // รอผล lab
+  READY_TO_BILL
+  CLOSED
+  CANCELLED
+}
+
+model Encounter {
+  id             String          @id @default(uuid(7)) @db.Uuid
+  tenantId       String          @map("tenant_id") @db.Uuid
+  branchId       String          @map("branch_id") @db.Uuid
+  number         String // VN-BKK-2569-000123
+  type           EncounterType   @default(OPD)
+  status         EncounterStatus @default(WAITING)
+  petId          String          @map("pet_id") @db.Uuid
+  pet            Pet             @relation(fields: [petId], references: [id])
+  ownerId        String          @map("owner_id") @db.Uuid
+  owner          Owner           @relation(fields: [ownerId], references: [id])
+  bookingId      String?         @unique @map("booking_id") @db.Uuid
+  booking        Booking?        @relation(fields: [bookingId], references: [id])
+  arrivedAt      DateTime        @default(now()) @map("arrived_at") @db.Timestamptz
+  startedAt      DateTime?       @map("started_at") @db.Timestamptz
+  endedAt        DateTime?       @map("ended_at") @db.Timestamptz
+  closedAt       DateTime?       @map("closed_at") @db.Timestamptz
+  primaryVetId   String?         @map("primary_vet_id") @db.Uuid
+  roomResourceId String?         @map("room_resource_id") @db.Uuid
+  chiefComplaint String?         @map("chief_complaint")
+  /// 1 = วิกฤต ถึง 5 = ไม่เร่งด่วน
+  triageLevel    Int?            @map("triage_level")
+  followUpAt     DateTime?       @map("follow_up_at") @db.Date
+  dischargeNote  String?         @map("discharge_note")
+  createdById    String?         @map("created_by_id") @db.Uuid
+
+  vitals        VitalSign[]
+  soapNotes     SoapNote[]
+  problems      Problem[]
+  orders        ClinicalOrder[]
+  prescriptions Prescription[]
+  vaccinations  Vaccination[]
+  weights       PetWeight[]
+  consentForms  ConsentForm[]
+  attachments   Attachment[]
+  estimate      TreatmentEstimate?
+  chargeItems   ChargeItem[]
+  stay          Stay?
+
+  @@unique([tenantId, number])
+  @@index([tenantId, branchId, status, arrivedAt])
+  @@index([tenantId, petId, arrivedAt])
+}
+
+model VitalSign {
+  id             String    @id @default(uuid(7)) @db.Uuid
+  tenantId       String    @map("tenant_id") @db.Uuid
+  encounterId    String    @map("encounter_id") @db.Uuid
+  encounter      Encounter @relation(fields: [encounterId], references: [id], onDelete: Cascade)
+  recordedAt     DateTime  @default(now()) @map("recorded_at") @db.Timestamptz
+  temperatureC   Decimal?  @map("temperature_c") @db.Decimal(4, 1)
+  heartRateBpm   Int?      @map("heart_rate_bpm")
+  respRateBpm    Int?      @map("resp_rate_bpm")
+  weightKg       Decimal?  @map("weight_kg") @db.Decimal(8, 3)
+  bcs            Int?
+  painScore      Int?      @map("pain_score")
+  mucousMembrane String?   @map("mucous_membrane")
+  crtSeconds     Decimal?  @map("crt_seconds") @db.Decimal(3, 1)
+  systolicBp     Int?      @map("systolic_bp")
+  spo2           Int?
+  note           String?
+  recordedById   String?   @map("recorded_by_id") @db.Uuid
+
+  @@index([encounterId, recordedAt])
+}
+
+/// เมื่อ signedAt ไม่เป็น null แล้ว ห้ามแก้ — ต้องใช้ SoapAddendum
+model SoapNote {
+  id          String    @id @default(uuid(7)) @db.Uuid
+  tenantId    String    @map("tenant_id") @db.Uuid
+  encounterId String    @map("encounter_id") @db.Uuid
+  encounter   Encounter @relation(fields: [encounterId], references: [id], onDelete: Cascade)
+  subjective  String?
+  objective   String?
+  assessment  String?
+  plan        String?
+  authorId    String    @map("author_id") @db.Uuid
+  createdAt   DateTime  @default(now()) @map("created_at") @db.Timestamptz
+  updatedAt   DateTime  @updatedAt @map("updated_at") @db.Timestamptz
+  signedAt    DateTime? @map("signed_at") @db.Timestamptz
+  signedById  String?   @map("signed_by_id") @db.Uuid
+
+  addenda SoapAddendum[]
+
+  @@index([encounterId, createdAt])
+}
+
+model SoapAddendum {
+  id         String   @id @default(uuid(7)) @db.Uuid
+  tenantId   String   @map("tenant_id") @db.Uuid
+  soapNoteId String   @map("soap_note_id") @db.Uuid
+  soapNote   SoapNote @relation(fields: [soapNoteId], references: [id], onDelete: Cascade)
+  content    String
+  reason     String
+  authorId   String   @map("author_id") @db.Uuid
+  createdAt  DateTime @default(now()) @map("created_at") @db.Timestamptz
+}
+
+model DiagnosisCode {
+  id         String  @id @default(uuid(7)) @db.Uuid
+  tenantId   String? @map("tenant_id") @db.Uuid
+  system     String  @default("VENOM")
+  code       String
+  nameTh     String  @map("name_th")
+  nameEn     String? @map("name_en")
+  bodySystem String? @map("body_system")
+  isActive   Boolean @default(true) @map("is_active")
+
+  problems Problem[]
+
+  @@unique([tenantId, system, code])
+}
+
+enum ProblemStatus {
+  ACTIVE
+  RESOLVED
+  CHRONIC
+  RULED_OUT
+}
+
+model Problem {
+  id              String         @id @default(uuid(7)) @db.Uuid
+  tenantId        String         @map("tenant_id") @db.Uuid
+  petId           String         @map("pet_id") @db.Uuid
+  pet             Pet            @relation(fields: [petId], references: [id], onDelete: Cascade)
+  encounterId     String?        @map("encounter_id") @db.Uuid
+  encounter       Encounter?     @relation(fields: [encounterId], references: [id])
+  diagnosisCodeId String?        @map("diagnosis_code_id") @db.Uuid
+  diagnosisCode   DiagnosisCode? @relation(fields: [diagnosisCodeId], references: [id])
+  label           String
+  status          ProblemStatus  @default(ACTIVE)
+  isPrimary       Boolean        @default(false) @map("is_primary")
+  onsetDate       DateTime?      @map("onset_date") @db.Date
+  resolvedAt      DateTime?      @map("resolved_at") @db.Date
+  note            String?
+  recordedById    String?        @map("recorded_by_id") @db.Uuid
+
+  @@index([petId, status])
+}
+
+enum OrderType {
+  LAB
+  IMAGING
+  PROCEDURE
+  NURSING
+  DIET
+  REFERRAL
+}
+
+enum OrderStatus {
+  ORDERED
+  IN_PROGRESS
+  COMPLETED
+  CANCELLED
+}
+
+model ClinicalOrder {
+  id            String       @id @default(uuid(7)) @db.Uuid
+  tenantId      String       @map("tenant_id") @db.Uuid
+  encounterId   String       @map("encounter_id") @db.Uuid
+  encounter     Encounter    @relation(fields: [encounterId], references: [id], onDelete: Cascade)
+  type          OrderType
+  serviceItemId String?      @map("service_item_id") @db.Uuid
+  serviceItem   ServiceItem? @relation(fields: [serviceItemId], references: [id])
+  description   String
+  priority      String       @default("ROUTINE") // ROUTINE | URGENT | STAT
+  status        OrderStatus  @default(ORDERED)
+  orderedById   String       @map("ordered_by_id") @db.Uuid
+  orderedAt     DateTime     @default(now()) @map("ordered_at") @db.Timestamptz
+  performedById String?      @map("performed_by_id") @db.Uuid
+  performedAt   DateTime?    @map("performed_at") @db.Timestamptz
+  resultSummary String?      @map("result_summary")
+  cancelReason  String?      @map("cancel_reason")
+
+  labResults  LabResult[]
+  attachments Attachment[]
+
+  @@index([encounterId, status])
+}
+
+model LabResult {
+  id          String        @id @default(uuid(7)) @db.Uuid
+  tenantId    String        @map("tenant_id") @db.Uuid
+  orderId     String        @map("order_id") @db.Uuid
+  order       ClinicalOrder @relation(fields: [orderId], references: [id], onDelete: Cascade)
+  panelName   String        @map("panel_name") // CBC, Blood Chemistry, Urinalysis
+  analyte     String // WBC, ALT, Creatinine
+  valueText   String?       @map("value_text")
+  valueNum    Decimal?      @map("value_num") @db.Decimal(14, 4)
+  unit        String?
+  refLow      Decimal?      @map("ref_low") @db.Decimal(14, 4)
+  refHigh     Decimal?      @map("ref_high") @db.Decimal(14, 4)
+  flag        String? // LOW | NORMAL | HIGH | CRITICAL
+  resultedAt  DateTime      @map("resulted_at") @db.Timestamptz
+  deviceName  String?       @map("device_name")
+  enteredById String?       @map("entered_by_id") @db.Uuid
+
+  @@index([orderId, panelName])
+}
+
+model Attachment {
+  id             String         @id @default(uuid(7)) @db.Uuid
+  tenantId       String         @map("tenant_id") @db.Uuid
+  branchId       String?        @map("branch_id") @db.Uuid
+  entityType     String         @map("entity_type") // PET, ENCOUNTER, ORDER, GROOMING_JOB, STAY, OWNER
+  entityId       String         @map("entity_id") @db.Uuid
+  kind           String // XRAY, LAB_PDF, PHOTO, CONSENT, OTHER
+  fileKey        String         @map("file_key")
+  fileName       String         @map("file_name")
+  mimeType       String         @map("mime_type")
+  sizeBytes      Int            @map("size_bytes")
+  encounterId    String?        @map("encounter_id") @db.Uuid
+  encounter      Encounter?     @relation(fields: [encounterId], references: [id])
+  orderId        String?        @map("order_id") @db.Uuid
+  order          ClinicalOrder? @relation(fields: [orderId], references: [id])
+  uploadedById   String?        @map("uploaded_by_id") @db.Uuid
+  uploadedAt     DateTime       @default(now()) @map("uploaded_at") @db.Timestamptz
+  visibleToOwner Boolean        @default(false) @map("visible_to_owner")
+
+  @@index([tenantId, entityType, entityId])
+}
+
+enum ConsentFormType {
+  SURGERY
+  ANESTHESIA
+  EUTHANASIA
+  HOSPITALIZATION
+  BOARDING
+  TREATMENT_REFUSAL
+}
+
+model ConsentForm {
+  id             String          @id @default(uuid(7)) @db.Uuid
+  tenantId       String          @map("tenant_id") @db.Uuid
+  petId          String          @map("pet_id") @db.Uuid
+  pet            Pet             @relation(fields: [petId], references: [id])
+  encounterId    String?         @map("encounter_id") @db.Uuid
+  encounter      Encounter?      @relation(fields: [encounterId], references: [id])
+  type           ConsentFormType
+  contentVersion String          @map("content_version")
+  bodySnapshot   String          @map("body_snapshot") // ข้อความที่ผู้ลงนามเห็นจริง เก็บไว้ตลอดไป
+  signedAt       DateTime        @map("signed_at") @db.Timestamptz
+  signerName     String          @map("signer_name")
+  signerRelation String          @default("OWNER") @map("signer_relation")
+  signatureKey   String          @map("signature_key")
+  witnessId      String?         @map("witness_id") @db.Uuid
+
+  @@index([tenantId, petId, type])
+}
+
+model TreatmentEstimate {
+  id           String    @id @default(uuid(7)) @db.Uuid
+  tenantId     String    @map("tenant_id") @db.Uuid
+  encounterId  String    @unique @map("encounter_id") @db.Uuid
+  encounter    Encounter @relation(fields: [encounterId], references: [id], onDelete: Cascade)
+  lowSatang    Int       @map("low_satang")
+  highSatang   Int       @map("high_satang")
+  linesJson    Json      @map("lines_json")
+  status       String    @default("DRAFT") // DRAFT | PRESENTED | APPROVED | DECLINED
+  presentedAt  DateTime? @map("presented_at") @db.Timestamptz
+  approvedAt   DateTime? @map("approved_at") @db.Timestamptz
+  approverName String?   @map("approver_name")
+  signatureKey String?   @map("signature_key")
+  createdById  String    @map("created_by_id") @db.Uuid
+}
+
+// ============================================================================
+// PHARMACY — สั่งยา / จ่ายยา / ให้ยา (สามเรื่องแยกกัน)
+// ============================================================================
+
+enum PrescriptionStatus {
+  DRAFT
+  ACTIVE
+  PARTIALLY_DISPENSED
+  DISPENSED
+  COMPLETED
+  CANCELLED
+}
+
+model Prescription {
+  id              String             @id @default(uuid(7)) @db.Uuid
+  tenantId        String             @map("tenant_id") @db.Uuid
+  branchId        String             @map("branch_id") @db.Uuid
+  encounterId     String?            @map("encounter_id") @db.Uuid
+  encounter       Encounter?         @relation(fields: [encounterId], references: [id])
+  petId           String             @map("pet_id") @db.Uuid
+  pet             Pet                @relation(fields: [petId], references: [id])
+  productId       String             @map("product_id") @db.Uuid
+  product         Product            @relation(fields: [productId], references: [id])
+  /// ขนาดต่อครั้งในหน่วยฐานของสินค้า (เม็ด / ml)
+  doseAmount      Decimal            @map("dose_amount") @db.Decimal(12, 4)
+  doseUnit        String             @map("dose_unit")
+  /// น้ำหนักที่ใช้คำนวณ ณ เวลาสั่ง — ต้องเก็บ ไม่ใช้น้ำหนักล่าสุด
+  weightKgAtOrder Decimal?           @map("weight_kg_at_order") @db.Decimal(8, 3)
+  mgPerKg         Decimal?           @map("mg_per_kg") @db.Decimal(10, 4)
+  route           String // PO, SC, IV, IM, TOPICAL, OTIC, OPHTH
+  frequencyCode   String             @map("frequency_code") // SID, BID, TID, QID, q8h, PRN
+  timesPerDay     Decimal            @map("times_per_day") @db.Decimal(5, 2)
+  durationDays    Int                @map("duration_days")
+  totalQtyBase    Decimal            @map("total_qty_base") @db.Decimal(12, 4)
+  refillsAllowed  Int                @default(0) @map("refills_allowed")
+  instructionTh   String             @map("instruction_th") // ข้อความบนฉลากยา
+  warningTh       String?            @map("warning_th")
+  withFood        Boolean?           @map("with_food")
+  status          PrescriptionStatus @default(ACTIVE)
+  prescriberId    String             @map("prescriber_id") @db.Uuid
+  prescribedAt    DateTime           @default(now()) @map("prescribed_at") @db.Timestamptz
+  cancelReason    String?            @map("cancel_reason")
+
+  dispenses       Dispense[]
+  administrations MedAdmin[]
+
+  @@index([tenantId, petId, prescribedAt])
+  @@index([tenantId, status])
+}
+
+/// การจ่ายยาออกจากคลังจริง — หนึ่งใบสั่งจ่ายได้หลายครั้ง (refill / จ่ายไม่ครบ)
+model Dispense {
+  id             String        @id @default(uuid(7)) @db.Uuid
+  tenantId       String        @map("tenant_id") @db.Uuid
+  branchId       String        @map("branch_id") @db.Uuid
+  prescriptionId String?       @map("prescription_id") @db.Uuid
+  prescription   Prescription? @relation(fields: [prescriptionId], references: [id])
+  productId      String        @map("product_id") @db.Uuid
+  product        Product       @relation(fields: [productId], references: [id])
+  qtyBase        Decimal       @map("qty_base") @db.Decimal(12, 4)
+  dispensedById  String        @map("dispensed_by_id") @db.Uuid
+  dispensedAt    DateTime      @default(now()) @map("dispensed_at") @db.Timestamptz
+  labelPrintedAt DateTime?     @map("label_printed_at") @db.Timestamptz
+  note           String?
+
+  movements StockMovement[]
+
+  @@index([tenantId, branchId, dispensedAt])
+}
+
+enum MedAdminStatus {
+  SCHEDULED
+  GIVEN
+  REFUSED
+  MISSED
+  HELD
+}
+
+/// MAR — ตารางให้ยาผู้ป่วยใน/สัตว์ที่ฝากเลี้ยง
+model MedAdmin {
+  id               String         @id @default(uuid(7)) @db.Uuid
+  tenantId         String         @map("tenant_id") @db.Uuid
+  prescriptionId   String         @map("prescription_id") @db.Uuid
+  prescription     Prescription   @relation(fields: [prescriptionId], references: [id], onDelete: Cascade)
+  stayId           String?        @map("stay_id") @db.Uuid
+  stay             Stay?          @relation(fields: [stayId], references: [id])
+  scheduledAt      DateTime       @map("scheduled_at") @db.Timestamptz
+  administeredAt   DateTime?      @map("administered_at") @db.Timestamptz
+  administeredById String?        @map("administered_by_id") @db.Uuid
+  status           MedAdminStatus @default(SCHEDULED)
+  actualDose       Decimal?       @map("actual_dose") @db.Decimal(12, 4)
+  route            String?
+  site             String?
+  reaction         String?
+  note             String?
+
+  @@index([tenantId, stayId, scheduledAt])
+  @@index([tenantId, status, scheduledAt])
+}
+
+// ============================================================================
+// BOARDING / HOSPITALIZATION
+// ============================================================================
+
+enum StayType {
+  BOARDING // ฝากเลี้ยง
+  HOSPITAL // ผู้ป่วยใน
+  DAYCARE
+}
+
+enum StayStatus {
+  RESERVED
+  CHECKED_IN
+  CHECKED_OUT
+  CANCELLED
+}
+
+model Stay {
+  id                  String     @id @default(uuid(7)) @db.Uuid
+  tenantId            String     @map("tenant_id") @db.Uuid
+  branchId            String     @map("branch_id") @db.Uuid
+  code                String
+  type                StayType
+  status              StayStatus @default(RESERVED)
+  petId               String     @map("pet_id") @db.Uuid
+  pet                 Pet        @relation(fields: [petId], references: [id])
+  ownerId             String     @map("owner_id") @db.Uuid
+  owner               Owner      @relation(fields: [ownerId], references: [id])
+  bookingId           String?    @unique @map("booking_id") @db.Uuid
+  booking             Booking?   @relation(fields: [bookingId], references: [id])
+  encounterId         String?    @unique @map("encounter_id") @db.Uuid
+  encounter           Encounter? @relation(fields: [encounterId], references: [id])
+  kennelResourceId    String     @map("kennel_resource_id") @db.Uuid
+  kennel              Resource   @relation(fields: [kennelResourceId], references: [id])
+  checkInAt           DateTime?  @map("check_in_at") @db.Timestamptz
+  expectedOutAt       DateTime   @map("expected_out_at") @db.Timestamptz
+  checkOutAt          DateTime?  @map("check_out_at") @db.Timestamptz
+  /// วันที่คิดค่าห้องไปแล้วถึงวันไหน (กันคิดซ้ำเมื่อ job รันหลายรอบ)
+  billedThroughDate   DateTime?  @map("billed_through_date") @db.Date
+  dailyRateServiceId  String?    @map("daily_rate_service_id") @db.Uuid
+  dailyRateSatang     Int?       @map("daily_rate_satang")
+  feedingPlan         String?    @map("feeding_plan")
+  medicationPlan      String?    @map("medication_plan")
+  belongings          Json? // [{item:"ผ้าห่มลายแมว", qty:1, photoKey:"..."}]
+  specialInstruction  String?    @map("special_instruction")
+  emergencyContact    String?    @map("emergency_contact")
+  /// ต้องตรวจสมุดวัคซีนก่อนรับฝาก
+  vaccineVerifiedAt   DateTime?  @map("vaccine_verified_at") @db.Timestamptz
+  vaccineVerifiedById String?    @map("vaccine_verified_by_id") @db.Uuid
+  checkInById         String?    @map("check_in_by_id") @db.Uuid
+  checkOutById        String?    @map("check_out_by_id") @db.Uuid
+  note                String?
+  createdAt           DateTime   @default(now()) @map("created_at") @db.Timestamptz
+
+  careLogs    CareLog[]
+  kennelMoves StayKennelMove[]
+  medAdmins   MedAdmin[]
+  chargeItems ChargeItem[]
+
+  @@unique([tenantId, code])
+  @@index([tenantId, branchId, status, expectedOutAt])
+  @@index([tenantId, petId])
+}
+
+model StayKennelMove {
+  id             String   @id @default(uuid(7)) @db.Uuid
+  tenantId       String   @map("tenant_id") @db.Uuid
+  stayId         String   @map("stay_id") @db.Uuid
+  stay           Stay     @relation(fields: [stayId], references: [id], onDelete: Cascade)
+  fromResourceId String   @map("from_resource_id") @db.Uuid
+  toResourceId   String   @map("to_resource_id") @db.Uuid
+  movedAt        DateTime @default(now()) @map("moved_at") @db.Timestamptz
+  reason         String?
+  movedById      String?  @map("moved_by_id") @db.Uuid
+}
+
+enum CareLogType {
+  FEED
+  WATER
+  WALK
+  PLAY
+  MEDICATE
+  CLEAN
+  GROOM
+  OBSERVATION
+  INCIDENT
+}
+
+model CareLog {
+  id              String      @id @default(uuid(7)) @db.Uuid
+  tenantId        String      @map("tenant_id") @db.Uuid
+  stayId          String      @map("stay_id") @db.Uuid
+  stay            Stay        @relation(fields: [stayId], references: [id], onDelete: Cascade)
+  occurredAt      DateTime    @default(now()) @map("occurred_at") @db.Timestamptz
+  type            CareLogType
+  detail          String?
+  appetiteScore   Int?        @map("appetite_score") // 0-3
+  stoolScore      Int?        @map("stool_score") // 1-7 (Bristol-like)
+  urination       String?
+  moodNote        String?     @map("mood_note")
+  photoKeys       String[]    @map("photo_keys")
+  staffId         String      @map("staff_id") @db.Uuid
+  /// เวลาที่ส่งอัปเดตนี้ให้เจ้าของดูในพอร์ทัล
+  sharedToOwnerAt DateTime?   @map("shared_to_owner_at") @db.Timestamptz
+
+  @@index([stayId, occurredAt])
+}
+
+// ============================================================================
+// GROOMING
+// ============================================================================
+
+enum GroomingStatus {
+  SCHEDULED
+  CHECKED_IN
+  IN_PROGRESS
+  DRYING
+  READY_FOR_PICKUP
+  COMPLETED
+  CANCELLED
+  NO_SHOW
+}
+
+model GroomingJob {
+  id                String         @id @default(uuid(7)) @db.Uuid
+  tenantId          String         @map("tenant_id") @db.Uuid
+  branchId          String         @map("branch_id") @db.Uuid
+  code              String
+  status            GroomingStatus @default(SCHEDULED)
+  bookingId         String?        @unique @map("booking_id") @db.Uuid
+  booking           Booking?       @relation(fields: [bookingId], references: [id])
+  petId             String         @map("pet_id") @db.Uuid
+  pet               Pet            @relation(fields: [petId], references: [id])
+  ownerId           String         @map("owner_id") @db.Uuid
+  owner             Owner          @relation(fields: [ownerId], references: [id])
+  groomerResourceId String         @map("groomer_resource_id") @db.Uuid
+  groomer           Resource       @relation(fields: [groomerResourceId], references: [id])
+  stationResourceId String?        @map("station_resource_id") @db.Uuid
+  checkInAt         DateTime?      @map("check_in_at") @db.Timestamptz
+  startedAt         DateTime?      @map("started_at") @db.Timestamptz
+  finishedAt        DateTime?      @map("finished_at") @db.Timestamptz
+  pickedUpAt        DateTime?      @map("picked_up_at") @db.Timestamptz
+  styleNote         String?        @map("style_note")
+  clipperBladeSize  String?        @map("clipper_blade_size") // "#7F", "#10"
+  coatCondition     String?        @map("coat_condition") // สังกะตัง, ปกติ
+  /// สิ่งที่ช่างพบบนผิวหนัง — ถ้าผิดปกติควรเสนอให้หมอดู
+  skinFindings      String?        @map("skin_findings")
+  foundParasites    Boolean        @default(false) @map("found_parasites")
+  beforePhotoKeys   String[]       @map("before_photo_keys")
+  afterPhotoKeys    String[]       @map("after_photo_keys")
+  incidentNote      String?        @map("incident_note")
+  nextDueWeeks      Int?           @map("next_due_weeks")
+  createdAt         DateTime       @default(now()) @map("created_at") @db.Timestamptz
+
+  chargeItems ChargeItem[]
+
+  @@unique([tenantId, code])
+  @@index([tenantId, branchId, status, checkInAt])
+  @@index([tenantId, groomerResourceId, checkInAt])
+}
+
+model GroomingPreference {
+  petId                      String   @id @map("pet_id") @db.Uuid
+  pet                        Pet      @relation(fields: [petId], references: [id], onDelete: Cascade)
+  tenantId                   String   @map("tenant_id") @db.Uuid
+  preferredStyle             String?  @map("preferred_style")
+  bladeSize                  String?  @map("blade_size")
+  shampooProductId           String?  @map("shampoo_product_id") @db.Uuid
+  avoidNote                  String?  @map("avoid_note") // เช่น ห้ามตัดหนวด ห้ามเป่าหน้า
+  temperamentNote            String?  @map("temperament_note")
+  needsMuzzle                Boolean  @default(false) @map("needs_muzzle")
+  preferredGroomerResourceId String?  @map("preferred_groomer_resource_id") @db.Uuid
+  updatedById                String?  @map("updated_by_id") @db.Uuid
+  updatedAt                  DateTime @updatedAt @map("updated_at") @db.Timestamptz
+}
+
+// ============================================================================
+// CATALOG — บริการและสินค้า
+// ============================================================================
+
+enum ServiceCategory {
+  CONSULT
+  PROCEDURE
+  SURGERY
+  LAB
+  IMAGING
+  VACCINE
+  GROOMING
+  BOARDING
+  NURSING
+  OTHER
+}
+
+enum TaxCode {
+  VAT7 // ภาษีมูลค่าเพิ่ม 7%
+  VAT0 // อัตราศูนย์
+  EXEMPT // ยกเว้นภาษี
+  NONVAT // กิจการไม่จด VAT
+}
+
+model ServiceItem {
+  id                   String          @id @default(uuid(7)) @db.Uuid
+  tenantId             String          @map("tenant_id") @db.Uuid
+  code                 String
+  name                 String
+  category             ServiceCategory
+  description          String?
+  priceSatang          Int             @map("price_satang")
+  taxCode              TaxCode         @default(VAT7) @map("tax_code")
+  durationMinutes      Int?            @map("duration_minutes") // ใช้จัดตารางนัด
+  requiredResourceType ResourceType?   @map("required_resource_type")
+  /// ให้ลูกค้าจองเองผ่านพอร์ทัลได้หรือไม่
+  isBookableOnline     Boolean         @default(false) @map("is_bookable_online")
+  onlineDepositSatang  Int             @default(0) @map("online_deposit_satang")
+  speciesCodes         String[]        @map("species_codes") // จำกัดชนิดสัตว์ที่ใช้บริการนี้ได้
+  isActive             Boolean         @default(true) @map("is_active")
+  sortOrder            Int             @default(0) @map("sort_order")
+
+  bookingItems BookingItem[]
+  orders       ClinicalOrder[]
+  chargeItems  ChargeItem[]
+  packageLines ServicePackageLine[]
+
+  @@unique([tenantId, code])
+  @@index([tenantId, category, isActive])
+}
+
+model ServicePackage {
+  id          String  @id @default(uuid(7)) @db.Uuid
+  tenantId    String  @map("tenant_id") @db.Uuid
+  code        String
+  name        String
+  description String?
+  priceSatang Int     @map("price_satang")
+  validDays   Int?    @map("valid_days") // อายุแพ็กเกจหลังซื้อ
+  isActive    Boolean @default(true) @map("is_active")
+
+  lines ServicePackageLine[]
+
+  @@unique([tenantId, code])
+}
+
+model ServicePackageLine {
+  id            String         @id @default(uuid(7)) @db.Uuid
+  tenantId      String         @map("tenant_id") @db.Uuid
+  packageId     String         @map("package_id") @db.Uuid
+  package       ServicePackage @relation(fields: [packageId], references: [id], onDelete: Cascade)
+  serviceItemId String?        @map("service_item_id") @db.Uuid
+  serviceItem   ServiceItem?   @relation(fields: [serviceItemId], references: [id])
+  productId     String?        @map("product_id") @db.Uuid
+  product       Product?       @relation(fields: [productId], references: [id])
+  qty           Decimal        @db.Decimal(10, 2)
+}
+
+enum ProductType {
+  DRUG // ยา
+  VACCINE
+  CONSUMABLE // เวชภัณฑ์สิ้นเปลือง
+  FOOD // อาหารสัตว์
+  RETAIL // ของใช้ ปลอกคอ ของเล่น
+  SUPPLEMENT
+}
+
+model Product {
+  id                   String      @id @default(uuid(7)) @db.Uuid
+  tenantId             String      @map("tenant_id") @db.Uuid
+  code                 String
+  barcode              String?
+  name                 String
+  genericName          String?     @map("generic_name")
+  searchKey            String      @map("search_key")
+  type                 ProductType
+  category             String?
+  dosageForm           String?     @map("dosage_form") // เม็ด, น้ำแขวนตะกอน, ครีม
+  strength             String? // "250 mg"
+  baseUnit             String      @map("base_unit") // หน่วยที่ใช้นับสต็อก: เม็ด, ml, ชิ้น
+  isControlled         Boolean     @default(false) @map("is_controlled")
+  controlledClass      String?     @map("controlled_class") // วัตถุออกฤทธิ์ประเภท 2/3/4, ยาเสพติดให้โทษประเภท 2
+  requiresPrescription Boolean     @default(false) @map("requires_prescription")
+  defaultPriceSatang   Int         @map("default_price_satang")
+  costSatang           Int?        @map("cost_satang") // ต้นทุนเฉลี่ยล่าสุด (ใช้ทำกำไรขั้นต้น)
+  taxCode              TaxCode     @default(VAT7) @map("tax_code")
+  reorderPointBase     Decimal?    @map("reorder_point_base") @db.Decimal(14, 4)
+  maxStockBase         Decimal?    @map("max_stock_base") @db.Decimal(14, 4)
+  storageNote          String?     @map("storage_note") // เก็บในตู้เย็น 2-8°C
+  manufacturer         String?
+  isActive             Boolean     @default(true) @map("is_active")
+  deletedAt            DateTime?   @map("deleted_at") @db.Timestamptz
+
+  units         ProductUnit[]
+  lots          StockLot[]
+  movements     StockMovement[]
+  onHand        StockOnHand[]
+  prescriptions Prescription[]
+  dispenses     Dispense[]
+  chargeItems   ChargeItem[]
+  vaccinations  Vaccination[]
+  purchaseLines PurchaseOrderLine[]
+  receiptLines  GoodsReceiptLine[]
+  transferLines StockTransferLine[]
+  countLines    StockCountLine[]
+  packageLines  ServicePackageLine[]
+
+  @@unique([tenantId, code])
+  @@index([tenantId, barcode])
+  @@index([tenantId, type, isActive])
+}
+
+/// หน่วยนับหลายชั้น: กล่อง(100) → แผง(10) → เม็ด(1)
+model ProductUnit {
+  id             String  @id @default(uuid(7)) @db.Uuid
+  tenantId       String  @map("tenant_id") @db.Uuid
+  productId      String  @map("product_id") @db.Uuid
+  product        Product @relation(fields: [productId], references: [id], onDelete: Cascade)
+  unitName       String  @map("unit_name")
+  factorToBase   Decimal @map("factor_to_base") @db.Decimal(14, 4)
+  isPurchaseUnit Boolean @default(false) @map("is_purchase_unit")
+  isSaleUnit     Boolean @default(true) @map("is_sale_unit")
+  priceSatang    Int?    @map("price_satang") // ราคาขายเฉพาะหน่วยนี้ (ถ้า null ใช้ defaultPrice × factor)
+  barcode        String?
+
+  chargeItems ChargeItem[]
+
+  @@unique([productId, unitName])
+}
+
+// ============================================================================
+// INVENTORY — คลังสินค้า
+// ============================================================================
+
+model Supplier {
+  id           String  @id @default(uuid(7)) @db.Uuid
+  tenantId     String  @map("tenant_id") @db.Uuid
+  code         String
+  name         String
+  taxId        String? @map("tax_id")
+  contactName  String? @map("contact_name")
+  phone        String?
+  email        String?
+  address      String?
+  paymentTerms String? @map("payment_terms") // "เครดิต 30 วัน"
+  isActive     Boolean @default(true) @map("is_active")
+
+  purchaseOrders PurchaseOrder[]
+
+  @@unique([tenantId, code])
+}
+
+enum PurchaseOrderStatus {
+  DRAFT
+  SUBMITTED
+  APPROVED
+  PARTIALLY_RECEIVED
+  RECEIVED
+  CANCELLED
+}
+
+model PurchaseOrder {
+  id             String              @id @default(uuid(7)) @db.Uuid
+  tenantId       String              @map("tenant_id") @db.Uuid
+  branchId       String              @map("branch_id") @db.Uuid
+  number         String
+  supplierId     String              @map("supplier_id") @db.Uuid
+  supplier       Supplier            @relation(fields: [supplierId], references: [id])
+  status         PurchaseOrderStatus @default(DRAFT)
+  orderedAt      DateTime?           @map("ordered_at") @db.Timestamptz
+  expectedAt     DateTime?           @map("expected_at") @db.Date
+  subtotalSatang Int                 @default(0) @map("subtotal_satang")
+  vatSatang      Int                 @default(0) @map("vat_satang")
+  totalSatang    Int                 @default(0) @map("total_satang")
+  note           String?
+  createdById    String              @map("created_by_id") @db.Uuid
+  approvedById   String?             @map("approved_by_id") @db.Uuid
+  approvedAt     DateTime?           @map("approved_at") @db.Timestamptz
+
+  lines    PurchaseOrderLine[]
+  receipts GoodsReceipt[]
+
+  @@unique([tenantId, number])
+  @@index([tenantId, branchId, status])
+}
+
+model PurchaseOrderLine {
+  id              String        @id @default(uuid(7)) @db.Uuid
+  tenantId        String        @map("tenant_id") @db.Uuid
+  purchaseOrderId String        @map("purchase_order_id") @db.Uuid
+  purchaseOrder   PurchaseOrder @relation(fields: [purchaseOrderId], references: [id], onDelete: Cascade)
+  productId       String        @map("product_id") @db.Uuid
+  product         Product       @relation(fields: [productId], references: [id])
+  unitName        String        @map("unit_name")
+  factorToBase    Decimal       @map("factor_to_base") @db.Decimal(14, 4)
+  qtyOrdered      Decimal       @map("qty_ordered") @db.Decimal(14, 4)
+  qtyReceivedBase Decimal       @default(0) @map("qty_received_base") @db.Decimal(14, 4)
+  unitCostSatang  Int           @map("unit_cost_satang")
+  note            String?
+}
+
+model GoodsReceipt {
+  id                String         @id @default(uuid(7)) @db.Uuid
+  tenantId          String         @map("tenant_id") @db.Uuid
+  branchId          String         @map("branch_id") @db.Uuid
+  number            String
+  purchaseOrderId   String?        @map("purchase_order_id") @db.Uuid
+  purchaseOrder     PurchaseOrder? @relation(fields: [purchaseOrderId], references: [id])
+  supplierId        String         @map("supplier_id") @db.Uuid
+  supplierInvoiceNo String?        @map("supplier_invoice_no")
+  receivedAt        DateTime       @default(now()) @map("received_at") @db.Timestamptz
+  receivedById      String         @map("received_by_id") @db.Uuid
+  note              String?
+
+  lines GoodsReceiptLine[]
+
+  @@unique([tenantId, number])
+}
+
+model GoodsReceiptLine {
+  id             String       @id @default(uuid(7)) @db.Uuid
+  tenantId       String       @map("tenant_id") @db.Uuid
+  goodsReceiptId String       @map("goods_receipt_id") @db.Uuid
+  goodsReceipt   GoodsReceipt @relation(fields: [goodsReceiptId], references: [id], onDelete: Cascade)
+  productId      String       @map("product_id") @db.Uuid
+  product        Product      @relation(fields: [productId], references: [id])
+  unitName       String       @map("unit_name")
+  qty            Decimal      @db.Decimal(14, 4)
+  qtyBase        Decimal      @map("qty_base") @db.Decimal(14, 4)
+  lotNo          String       @map("lot_no")
+  expiryDate     DateTime?    @map("expiry_date") @db.Date
+  unitCostSatang Int          @map("unit_cost_satang")
+  lotId          String?      @map("lot_id") @db.Uuid
+}
+
+model StockLot {
+  id             String    @id @default(uuid(7)) @db.Uuid
+  tenantId       String    @map("tenant_id") @db.Uuid
+  branchId       String    @map("branch_id") @db.Uuid
+  productId      String    @map("product_id") @db.Uuid
+  product        Product   @relation(fields: [productId], references: [id])
+  lotNo          String    @map("lot_no")
+  expiryDate     DateTime? @map("expiry_date") @db.Date
+  receivedAt     DateTime  @default(now()) @map("received_at") @db.Timestamptz
+  unitCostSatang Int       @map("unit_cost_satang")
+  supplierId     String?   @map("supplier_id") @db.Uuid
+  isQuarantined  Boolean   @default(false) @map("is_quarantined")
+
+  movements StockMovement[]
+  onHand    StockOnHand[]
+
+  @@unique([tenantId, branchId, productId, lotNo])
+  @@index([tenantId, branchId, productId, expiryDate])
+}
+
+enum StockMovementType {
+  RECEIPT // รับเข้าจากการซื้อ
+  DISPENSE // จ่ายยาให้สัตว์
+  SALE // ขายหน้าร้าน
+  RETURN_IN // ลูกค้าคืน
+  RETURN_OUT // คืนผู้ขาย
+  ADJUST_IN
+  ADJUST_OUT
+  TRANSFER_IN
+  TRANSFER_OUT
+  WASTE // หมดอายุ / แตกเสียหาย
+  COUNT_ADJUST // ปรับตามผลตรวจนับ
+  INTERNAL_USE // ใช้ในคลินิก ไม่คิดเงิน
+}
+
+/// บัญชีเดินสะพัดของสต็อก — append-only (trigger ห้าม UPDATE/DELETE)
+/// qtyBase เป็นบวกเมื่อเข้า ลบเมื่อออก
+model StockMovement {
+  id             String            @id @default(uuid(7)) @db.Uuid
+  tenantId       String            @map("tenant_id") @db.Uuid
+  branchId       String            @map("branch_id") @db.Uuid
+  productId      String            @map("product_id") @db.Uuid
+  product        Product           @relation(fields: [productId], references: [id])
+  lotId          String?           @map("lot_id") @db.Uuid
+  lot            StockLot?         @relation(fields: [lotId], references: [id])
+  type           StockMovementType
+  qtyBase        Decimal           @map("qty_base") @db.Decimal(14, 4)
+  unitCostSatang Int?              @map("unit_cost_satang")
+  refType        String?           @map("ref_type") // PRESCRIPTION, POS_SALE, GOODS_RECEIPT, STOCK_COUNT
+  refId          String?           @map("ref_id") @db.Uuid
+  dispenseId     String?           @map("dispense_id") @db.Uuid
+  dispense       Dispense?         @relation(fields: [dispenseId], references: [id])
+  occurredAt     DateTime          @default(now()) @map("occurred_at") @db.Timestamptz
+  performedById  String            @map("performed_by_id") @db.Uuid
+  reason         String?
+
+  @@index([tenantId, branchId, productId, occurredAt])
+  @@index([tenantId, refType, refId])
+}
+
+/// cache ยอดคงเหลือ อัปเดตด้วย trigger จาก StockMovement — กันสต็อกติดลบที่ชั้น DB
+model StockOnHand {
+  tenantId  String   @map("tenant_id") @db.Uuid
+  branchId  String   @map("branch_id") @db.Uuid
+  productId String   @map("product_id") @db.Uuid
+  product   Product  @relation(fields: [productId], references: [id])
+  lotId     String   @map("lot_id") @db.Uuid
+  lot       StockLot @relation(fields: [lotId], references: [id])
+  qtyBase   Decimal  @default(0) @map("qty_base") @db.Decimal(14, 4)
+  updatedAt DateTime @updatedAt @map("updated_at") @db.Timestamptz
+
+  @@id([tenantId, branchId, productId, lotId])
+  @@index([tenantId, branchId, productId])
+}
+
+model StockTransfer {
+  id           String    @id @default(uuid(7)) @db.Uuid
+  tenantId     String    @map("tenant_id") @db.Uuid
+  number       String
+  fromBranchId String    @map("from_branch_id") @db.Uuid
+  toBranchId   String    @map("to_branch_id") @db.Uuid
+  status       String    @default("DRAFT") // DRAFT | SENT | RECEIVED | CANCELLED
+  sentAt       DateTime? @map("sent_at") @db.Timestamptz
+  sentById     String?   @map("sent_by_id") @db.Uuid
+  receivedAt   DateTime? @map("received_at") @db.Timestamptz
+  receivedById String?   @map("received_by_id") @db.Uuid
+  note         String?
+
+  lines StockTransferLine[]
+
+  @@unique([tenantId, number])
+}
+
+model StockTransferLine {
+  id         String        @id @default(uuid(7)) @db.Uuid
+  tenantId   String        @map("tenant_id") @db.Uuid
+  transferId String        @map("transfer_id") @db.Uuid
+  transfer   StockTransfer @relation(fields: [transferId], references: [id], onDelete: Cascade)
+  productId  String        @map("product_id") @db.Uuid
+  product    Product       @relation(fields: [productId], references: [id])
+  lotId      String?       @map("lot_id") @db.Uuid
+  qtyBase    Decimal       @map("qty_base") @db.Decimal(14, 4)
+}
+
+model StockCount {
+  id           String    @id @default(uuid(7)) @db.Uuid
+  tenantId     String    @map("tenant_id") @db.Uuid
+  branchId     String    @map("branch_id") @db.Uuid
+  number       String
+  scopeNote    String?   @map("scope_note") // "เฉพาะยาในตู้เย็น"
+  status       String    @default("OPEN") // OPEN | COUNTED | POSTED | CANCELLED
+  startedAt    DateTime  @default(now()) @map("started_at") @db.Timestamptz
+  completedAt  DateTime? @map("completed_at") @db.Timestamptz
+  postedAt     DateTime? @map("posted_at") @db.Timestamptz
+  createdById  String    @map("created_by_id") @db.Uuid
+  approvedById String?   @map("approved_by_id") @db.Uuid
+
+  lines StockCountLine[]
+
+  @@unique([tenantId, number])
+}
+
+model StockCountLine {
+  id              String     @id @default(uuid(7)) @db.Uuid
+  tenantId        String     @map("tenant_id") @db.Uuid
+  stockCountId    String     @map("stock_count_id") @db.Uuid
+  stockCount      StockCount @relation(fields: [stockCountId], references: [id], onDelete: Cascade)
+  productId       String     @map("product_id") @db.Uuid
+  product         Product    @relation(fields: [productId], references: [id])
+  lotId           String?    @map("lot_id") @db.Uuid
+  systemQtyBase   Decimal    @map("system_qty_base") @db.Decimal(14, 4)
+  countedQtyBase  Decimal?   @map("counted_qty_base") @db.Decimal(14, 4)
+  varianceQtyBase Decimal?   @map("variance_qty_base") @db.Decimal(14, 4)
+  countedById     String?    @map("counted_by_id") @db.Uuid
+  note            String?
+}
+
+/// ทะเบียนยาควบคุม — ต้องแสดงยอดคงเหลือหลังทุกรายการและมีผู้ร่วมเป็นพยาน
+model ControlledDrugEntry {
+  id               String   @id @default(uuid(7)) @db.Uuid
+  tenantId         String   @map("tenant_id") @db.Uuid
+  branchId         String   @map("branch_id") @db.Uuid
+  productId        String   @map("product_id") @db.Uuid
+  movementId       String   @unique @map("movement_id") @db.Uuid
+  qtyBase          Decimal  @map("qty_base") @db.Decimal(14, 4)
+  balanceAfterBase Decimal  @map("balance_after_base") @db.Decimal(14, 4)
+  petId            String?  @map("pet_id") @db.Uuid
+  prescriberId     String?  @map("prescriber_id") @db.Uuid
+  performedById    String   @map("performed_by_id") @db.Uuid
+  witnessId        String?  @map("witness_id") @db.Uuid
+  occurredAt       DateTime @default(now()) @map("occurred_at") @db.Timestamptz
+  note             String?
+
+  @@index([tenantId, branchId, productId, occurredAt])
+}
+
+// ============================================================================
+// BILLING — ค่าใช้จ่าย, บิล, การชำระเงิน, ภาษี
+// ============================================================================
+
+enum ChargeSourceType {
+  ENCOUNTER
+  STAY
+  GROOMING
+  POS
+  BOOKING_DEPOSIT
+  MANUAL
+}
+
+enum ChargeItemType {
+  SERVICE
+  PRODUCT
+  PACKAGE
+  DEPOSIT
+  FEE // ค่าธรรมเนียม เช่น ค่ารับฝากนอกเวลา
+  DISCOUNT_ADJUSTMENT
+}
+
+enum ChargeStatus {
+  OPEN // ยังไม่วางบิล
+  INVOICED
+  VOID
+}
+
+/// จุดรวมค่าใช้จ่ายจากทุกโมดูล — ทำให้ออกบิลเดียวจบและรายงานไม่แตก
+model ChargeItem {
+  id                   String           @id @default(uuid(7)) @db.Uuid
+  tenantId             String           @map("tenant_id") @db.Uuid
+  branchId             String           @map("branch_id") @db.Uuid
+  ownerId              String           @map("owner_id") @db.Uuid
+  owner                Owner            @relation(fields: [ownerId], references: [id])
+  petId                String?          @map("pet_id") @db.Uuid
+  pet                  Pet?             @relation(fields: [petId], references: [id])
+  sourceType           ChargeSourceType @map("source_type")
+  encounterId          String?          @map("encounter_id") @db.Uuid
+  encounter            Encounter?       @relation(fields: [encounterId], references: [id])
+  stayId               String?          @map("stay_id") @db.Uuid
+  stay                 Stay?            @relation(fields: [stayId], references: [id])
+  groomingJobId        String?          @map("grooming_job_id") @db.Uuid
+  groomingJob          GroomingJob?     @relation(fields: [groomingJobId], references: [id])
+  posSaleId            String?          @map("pos_sale_id") @db.Uuid
+  posSale              PosSale?         @relation(fields: [posSaleId], references: [id])
+  bookingId            String?          @map("booking_id") @db.Uuid
+  booking              Booking?         @relation(fields: [bookingId], references: [id])
+  itemType             ChargeItemType   @map("item_type")
+  serviceItemId        String?          @map("service_item_id") @db.Uuid
+  serviceItem          ServiceItem?     @relation(fields: [serviceItemId], references: [id])
+  productId            String?          @map("product_id") @db.Uuid
+  product              Product?         @relation(fields: [productId], references: [id])
+  productUnitId        String?          @map("product_unit_id") @db.Uuid
+  productUnit          ProductUnit?     @relation(fields: [productUnitId], references: [id])
+  description          String
+  qty                  Decimal          @db.Decimal(12, 4)
+  unitName             String?          @map("unit_name")
+  unitPriceSatang      Int              @map("unit_price_satang")
+  discountSatang       Int              @default(0) @map("discount_satang")
+  discountReason       String?          @map("discount_reason")
+  discountApprovedById String?          @map("discount_approved_by_id") @db.Uuid
+  taxCode              TaxCode          @default(VAT7) @map("tax_code")
+  vatRatePercent       Decimal          @default(7) @map("vat_rate_percent") @db.Decimal(5, 2)
+  /// (qty × unitPrice) − discount — คำนวณและตรึงไว้ตอนสร้าง
+  amountSatang         Int              @map("amount_satang")
+  performedById        String?          @map("performed_by_id") @db.Uuid
+  occurredAt           DateTime         @default(now()) @map("occurred_at") @db.Timestamptz
+  status               ChargeStatus     @default(OPEN)
+  invoiceId            String?          @map("invoice_id") @db.Uuid
+  invoice              Invoice?         @relation(fields: [invoiceId], references: [id])
+  createdById          String?          @map("created_by_id") @db.Uuid
+  voidedAt             DateTime?        @map("voided_at") @db.Timestamptz
+  voidedById           String?          @map("voided_by_id") @db.Uuid
+  voidReason           String?          @map("void_reason")
+
+  @@index([tenantId, ownerId, status])
+  @@index([tenantId, branchId, occurredAt])
+  @@index([tenantId, sourceType, encounterId])
+}
+
+model PosSale {
+  id        String    @id @default(uuid(7)) @db.Uuid
+  tenantId  String    @map("tenant_id") @db.Uuid
+  branchId  String    @map("branch_id") @db.Uuid
+  number    String
+  ownerId   String?   @map("owner_id") @db.Uuid // ขายลูกค้าทั่วไปได้ ไม่ต้องมีเจ้าของสัตว์
+  owner     Owner?    @relation(fields: [ownerId], references: [id])
+  status    String    @default("OPEN") // OPEN | INVOICED | VOID
+  openedAt  DateTime  @default(now()) @map("opened_at") @db.Timestamptz
+  closedAt  DateTime? @map("closed_at") @db.Timestamptz
+  cashierId String    @map("cashier_id") @db.Uuid
+  shiftId   String?   @map("shift_id") @db.Uuid
+  note      String?
+
+  chargeItems ChargeItem[]
+  invoice     Invoice?
+
+  @@unique([tenantId, number])
+  @@index([tenantId, branchId, openedAt])
+}
+
+enum InvoiceDocType {
+  FULL_TAX_INVOICE // ใบกำกับภาษีเต็มรูป (ม.86/4)
+  ABBREVIATED_TAX_INVOICE // ใบกำกับภาษีอย่างย่อ (ม.86/6)
+  RECEIPT // ใบเสร็จรับเงิน (กิจการไม่จด VAT)
+  PROFORMA // ใบแจ้งหนี้ / ใบวางบิล
+}
+
+enum InvoiceStatus {
+  DRAFT
+  ISSUED
+  PARTIALLY_PAID
+  PAID
+  VOID
+}
+
+/// เมื่อ status พ้น DRAFT แล้ว ห้ามแก้ไขทุกฟิลด์ที่มีผลต่อยอดเงิน
+model Invoice {
+  id                  String         @id @default(uuid(7)) @db.Uuid
+  tenantId            String         @map("tenant_id") @db.Uuid
+  branchId            String         @map("branch_id") @db.Uuid
+  docType             InvoiceDocType @map("doc_type")
+  number              String // INV-BKK-2569-000123
+  ownerId             String         @map("owner_id") @db.Uuid
+  owner               Owner          @relation(fields: [ownerId], references: [id])
+  posSaleId           String?        @unique @map("pos_sale_id") @db.Uuid
+  posSale             PosSale?       @relation(fields: [posSaleId], references: [id])
+  status              InvoiceStatus  @default(DRAFT)
+  issuedAt            DateTime?      @map("issued_at") @db.Timestamptz
+  dueAt               DateTime?      @map("due_at") @db.Date
+  // --- ข้อมูลผู้ซื้อ ณ เวลาออกเอกสาร (snapshot) ---
+  buyerName           String         @map("buyer_name")
+  buyerTaxId          String?        @map("buyer_tax_id")
+  buyerBranchCode     String?        @map("buyer_branch_code")
+  buyerAddress        String?        @map("buyer_address")
+  // --- ข้อมูลผู้ขาย ณ เวลาออกเอกสาร (snapshot) ---
+  sellerName          String         @map("seller_name")
+  sellerTaxId         String?        @map("seller_tax_id")
+  sellerAddress       String?        @map("seller_address")
+  sellerBranchCode    String         @default("00000") @map("seller_branch_code")
+  // --- ยอดเงิน ---
+  priceIncludesVat    Boolean        @default(false) @map("price_includes_vat")
+  subtotalSatang      Int            @default(0) @map("subtotal_satang")
+  discountSatang      Int            @default(0) @map("discount_satang")
+  vatBaseSatang       Int            @default(0) @map("vat_base_satang")
+  vatSatang           Int            @default(0) @map("vat_satang")
+  exemptSatang        Int            @default(0) @map("exempt_satang")
+  grandTotalSatang    Int            @default(0) @map("grand_total_satang")
+  paidSatang          Int            @default(0) @map("paid_satang")
+  balanceSatang       Int            @default(0) @map("balance_satang")
+  note                String?
+  issuedById          String?        @map("issued_by_id") @db.Uuid
+  voidedAt            DateTime?      @map("voided_at") @db.Timestamptz
+  voidedById          String?        @map("voided_by_id") @db.Uuid
+  voidReason          String?        @map("void_reason")
+  replacedByInvoiceId String?        @map("replaced_by_invoice_id") @db.Uuid
+  replacedBy          Invoice?       @relation("InvoiceReplacement", fields: [replacedByInvoiceId], references: [id])
+  replaces            Invoice[]      @relation("InvoiceReplacement")
+  pdfKey              String?        @map("pdf_key")
+  etaxStatus          String?        @map("etax_status") // PENDING | SUBMITTED | ACCEPTED | REJECTED
+  etaxRef             String?        @map("etax_ref")
+  createdAt           DateTime       @default(now()) @map("created_at") @db.Timestamptz
+
+  lines       InvoiceLine[]
+  payments    Payment[]
+  creditNotes CreditNote[]
+  chargeItems ChargeItem[]
+
+  @@unique([tenantId, branchId, docType, number])
+  @@index([tenantId, ownerId, issuedAt])
+  @@index([tenantId, branchId, status, issuedAt])
+}
+
+/// สำเนาของ ChargeItem ณ เวลาออกบิล — ไม่อ้างราคาปัจจุบัน
+model InvoiceLine {
+  id              String         @id @default(uuid(7)) @db.Uuid
+  tenantId        String         @map("tenant_id") @db.Uuid
+  invoiceId       String         @map("invoice_id") @db.Uuid
+  invoice         Invoice        @relation(fields: [invoiceId], references: [id], onDelete: Cascade)
+  lineNo          Int            @map("line_no")
+  chargeItemId    String?        @map("charge_item_id") @db.Uuid
+  itemType        ChargeItemType @map("item_type")
+  itemCode        String?        @map("item_code")
+  description     String
+  petName         String?        @map("pet_name")
+  qty             Decimal        @db.Decimal(12, 4)
+  unitName        String?        @map("unit_name")
+  unitPriceSatang Int            @map("unit_price_satang")
+  discountSatang  Int            @default(0) @map("discount_satang")
+  taxCode         TaxCode        @map("tax_code")
+  vatRatePercent  Decimal        @map("vat_rate_percent") @db.Decimal(5, 2)
+  vatSatang       Int            @map("vat_satang")
+  amountSatang    Int            @map("amount_satang")
+  performedByName String?        @map("performed_by_name")
+
+  @@unique([invoiceId, lineNo])
+}
+
+enum PaymentMethod {
+  CASH
+  CREDIT_CARD
+  DEBIT_CARD
+  PROMPTPAY
+  BANK_TRANSFER
+  STORE_CREDIT // ใช้มัดจำ/เครดิตที่มีอยู่
+  INSURANCE
+  OTHER
+}
+
+model Payment {
+  id           String        @id @default(uuid(7)) @db.Uuid
+  tenantId     String        @map("tenant_id") @db.Uuid
+  branchId     String        @map("branch_id") @db.Uuid
+  invoiceId    String?       @map("invoice_id") @db.Uuid
+  invoice      Invoice?      @relation(fields: [invoiceId], references: [id])
+  ownerId      String        @map("owner_id") @db.Uuid
+  method       PaymentMethod
+  amountSatang Int           @map("amount_satang")
+  receivedAt   DateTime      @default(now()) @map("received_at") @db.Timestamptz
+  receivedById String        @map("received_by_id") @db.Uuid
+  shiftId      String?       @map("shift_id") @db.Uuid
+  shift        CashierShift? @relation(fields: [shiftId], references: [id])
+  reference    String? // เลขอ้างอิงโอน / slip
+  cardLast4    String?       @map("card_last4")
+  gatewayRef   String?       @map("gateway_ref")
+  status       String        @default("SUCCEEDED") // SUCCEEDED | VOIDED | REFUNDED
+  voidedAt     DateTime?     @map("voided_at") @db.Timestamptz
+  voidReason   String?       @map("void_reason")
+  note         String?
+
+  @@index([tenantId, branchId, receivedAt])
+  @@index([tenantId, shiftId])
+}
+
+/// ใบลดหนี้ (ม.86/10) — ใช้แก้บิลที่ออกไปแล้ว ห้ามแก้ Invoice เดิม
+model CreditNote {
+  id                   String   @id @default(uuid(7)) @db.Uuid
+  tenantId             String   @map("tenant_id") @db.Uuid
+  branchId             String   @map("branch_id") @db.Uuid
+  number               String
+  invoiceId            String   @map("invoice_id") @db.Uuid
+  invoice              Invoice  @relation(fields: [invoiceId], references: [id])
+  reasonCode           String   @map("reason_code") // PRICE_ERROR | SERVICE_NOT_RENDERED | RETURN | DISCOUNT_AFTER
+  reason               String
+  originalAmountSatang Int      @map("original_amount_satang")
+  correctAmountSatang  Int      @map("correct_amount_satang")
+  differenceSatang     Int      @map("difference_satang")
+  vatSatang            Int      @map("vat_satang")
+  issuedAt             DateTime @default(now()) @map("issued_at") @db.Timestamptz
+  issuedById           String   @map("issued_by_id") @db.Uuid
+  pdfKey               String?  @map("pdf_key")
+
+  @@unique([tenantId, branchId, number])
+}
+
+enum DepositStatus {
+  AVAILABLE
+  PARTIALLY_USED
+  USED
+  REFUNDED
+  EXPIRED
+}
+
+/// มัดจำค่าจองห้องฝาก / เครดิตคงเหลือของลูกค้า
+model Deposit {
+  id              String        @id @default(uuid(7)) @db.Uuid
+  tenantId        String        @map("tenant_id") @db.Uuid
+  branchId        String        @map("branch_id") @db.Uuid
+  ownerId         String        @map("owner_id") @db.Uuid
+  owner           Owner         @relation(fields: [ownerId], references: [id])
+  type            String        @default("BOOKING_DEPOSIT") // BOOKING_DEPOSIT | STORE_CREDIT | REFUND_CREDIT
+  amountSatang    Int           @map("amount_satang")
+  balanceSatang   Int           @map("balance_satang")
+  bookingId       String?       @map("booking_id") @db.Uuid
+  sourcePaymentId String?       @map("source_payment_id") @db.Uuid
+  status          DepositStatus @default(AVAILABLE)
+  expiresAt       DateTime?     @map("expires_at") @db.Date
+  note            String?
+  createdAt       DateTime      @default(now()) @map("created_at") @db.Timestamptz
+
+  @@index([tenantId, ownerId, status])
+}
+
+model CashierShift {
+  id                 String    @id @default(uuid(7)) @db.Uuid
+  tenantId           String    @map("tenant_id") @db.Uuid
+  branchId           String    @map("branch_id") @db.Uuid
+  cashierId          String    @map("cashier_id") @db.Uuid
+  openedAt           DateTime  @default(now()) @map("opened_at") @db.Timestamptz
+  closedAt           DateTime? @map("closed_at") @db.Timestamptz
+  openingFloatSatang Int       @default(0) @map("opening_float_satang")
+  expectedCashSatang Int?      @map("expected_cash_satang")
+  countedCashSatang  Int?      @map("counted_cash_satang")
+  varianceSatang     Int?      @map("variance_satang")
+  status             String    @default("OPEN") // OPEN | CLOSED | RECONCILED
+  closingNote        String?   @map("closing_note")
+  closedById         String?   @map("closed_by_id") @db.Uuid
+
+  payments Payment[]
+
+  @@index([tenantId, branchId, openedAt])
+}
+
+/// ตัวนับเลขที่เอกสารแบบไม่มีเลขว่าง — ล็อกแถวด้วย SELECT ... FOR UPDATE
+model DocumentSequence {
+  tenantId   String   @map("tenant_id") @db.Uuid
+  branchId   String   @map("branch_id") @db.Uuid
+  docType    String   @map("doc_type") // INVOICE_FULL, INVOICE_ABB, RECEIPT, CREDIT_NOTE, ENCOUNTER, PO
+  period     String // "2569" หรือ "256909" แล้วแต่รูปแบบที่คลินิกเลือก
+  lastNumber Int      @default(0) @map("last_number")
+  updatedAt  DateTime @updatedAt @map("updated_at") @db.Timestamptz
+
+  @@id([tenantId, branchId, docType, period])
+}
+
+/// ข้อมูลภาษีระดับสาขา — คลินิกที่ยังไม่จด VAT จะออกเป็นใบเสร็จรับเงินแทน
+model TaxProfile {
+  id                    String  @id @default(uuid(7)) @db.Uuid
+  tenantId              String  @map("tenant_id") @db.Uuid
+  branchId              String  @unique @map("branch_id") @db.Uuid
+  branch                Branch  @relation(fields: [branchId], references: [id])
+  isVatRegistered       Boolean @default(false) @map("is_vat_registered")
+  vatRatePercent        Decimal @default(7) @map("vat_rate_percent") @db.Decimal(5, 2)
+  taxId                 String? @map("tax_id")
+  taxBranchCode         String  @default("00000") @map("tax_branch_code")
+  sellerName            String  @map("seller_name")
+  sellerAddress         String  @map("seller_address")
+  /// true = ราคาที่ตั้งไว้รวม VAT แล้ว (ต้องถอด VAT ตอนออกบิล)
+  pricesIncludeVat      Boolean @default(true) @map("prices_include_vat")
+  abbreviatedApprovalNo String? @map("abbreviated_approval_no") // เลขอนุมัติใช้เครื่องบันทึกการเก็บเงิน
+  invoicePrefix         String  @default("INV") @map("invoice_prefix")
+  receiptFooterTh       String? @map("receipt_footer_th")
+  etaxEnabled           Boolean @default(false) @map("etax_enabled")
+  etaxProvider          String? @map("etax_provider")
+}
+
+// ============================================================================
+// NOTIFICATION
+// ============================================================================
+
+enum NotificationChannel {
+  EMAIL
+  SMS
+  LINE
+  PUSH
+  IN_APP
+}
+
+model NotificationTemplate {
+  id       String              @id @default(uuid(7)) @db.Uuid
+  tenantId String?             @map("tenant_id") @db.Uuid
+  key      String // APPOINTMENT_REMINDER, VACCINE_DUE, STAY_UPDATE
+  channel  NotificationChannel
+  locale   String              @default("th")
+  subject  String?
+  body     String
+  isActive Boolean             @default(true) @map("is_active")
+
+  @@unique([tenantId, key, channel, locale])
+}
+
+model NotificationLog {
+  id          String              @id @default(uuid(7)) @db.Uuid
+  tenantId    String              @map("tenant_id") @db.Uuid
+  channel     NotificationChannel
+  templateKey String              @map("template_key")
+  ownerId     String?             @map("owner_id") @db.Uuid
+  toAddress   String              @map("to_address")
+  payload     Json?
+  status      String              @default("QUEUED") // QUEUED | SENT | FAILED | SKIPPED
+  scheduledAt DateTime?           @map("scheduled_at") @db.Timestamptz
+  sentAt      DateTime?           @map("sent_at") @db.Timestamptz
+  error       String?
+  providerRef String?             @map("provider_ref")
+  /// กันส่งซ้ำ เช่น "vaccine-due:<petId>:<dueDate>"
+  dedupeKey   String?             @map("dedupe_key")
+
+  @@unique([tenantId, dedupeKey])
+  @@index([tenantId, status, scheduledAt])
+}
+
+model ReminderRule {
+  id              String                @id @default(uuid(7)) @db.Uuid
+  tenantId        String                @map("tenant_id") @db.Uuid
+  type            String // APPOINTMENT | VACCINE_DUE | GROOMING_DUE | MED_REFILL | STAY_CHECKOUT
+  offsetDays      Int                   @map("offset_days") // ลบ = ก่อนถึงกำหนด
+  sendAtLocalTime String                @default("09:00") @map("send_at_local_time")
+  channels        NotificationChannel[]
+  templateKey     String                @map("template_key")
+  isActive        Boolean               @default(true) @map("is_active")
+
+  @@unique([tenantId, type, offsetDays])
+}
