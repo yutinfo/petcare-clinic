@@ -1,6 +1,30 @@
 import { randomUUID } from "node:crypto";
 import { PrismaClient } from "@prisma/client";
-import { createAppContext, SYSTEM_ACTOR, type AppContext } from "@/server/context";
+import { PERMISSIONS } from "@/modules/identity";
+import { createAppContext, SYSTEM_ACTOR, type Actor, type AppContext } from "@/server/context";
+
+const ALL_PERMS = PERMISSIONS.map((p) => p.key);
+
+export function staffContext(
+  db: PrismaClient,
+  seed: { tenantId: string; branchId: string; actorId: string },
+  permissions: readonly string[] = ALL_PERMS,
+): AppContext {
+  const actor: Actor = {
+    userId: seed.actorId,
+    membershipId: seed.actorId,
+    displayName: "พนักงานทดสอบ",
+    kind: "staff",
+    permissions: new Set(permissions),
+    branchIds: new Set([seed.branchId]),
+  };
+  return createAppContext({
+    db,
+    tenantId: seed.tenantId,
+    branchId: seed.branchId,
+    actor,
+  });
+}
 
 export async function seedMiniClinic(db: PrismaClient) {
   const tenantId = randomUUID();

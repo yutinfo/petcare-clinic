@@ -2,7 +2,7 @@ import { beforeAll, describe, expect, it } from "vitest";
 import { checkInPet } from "@/modules/clinical";
 import { issueInvoiceFromCharges, tryMutateIssuedInvoice } from "./invoice";
 import { getPgHarness, type PgHarness } from "@/test/pg-harness";
-import { seedMiniClinic } from "@/test/clinic-fixture";
+import { seedMiniClinic, staffContext } from "@/test/clinic-fixture";
 
 let h: PgHarness;
 
@@ -13,36 +13,42 @@ beforeAll(async () => {
 describe("ออกบิล", () => {
   it("จองเลขตอนออกบิล คำนวณ VAT ระดับบิล และห้ามแก้ยอดหลังออก", async () => {
     const f = await seedMiniClinic(h.migrator);
-    const checked = await checkInPet(f.ctx, { petId: f.pet.id, weightKg: "4" });
+    const ctx = staffContext(h.app, f);
+    const checked = await checkInPet(ctx, { petId: f.pet.id, weightKg: "4" });
     const charges = await h.migrator.chargeItem.findMany({ where: { encounterId: checked.encounterId } });
     expect(charges.length).toBeGreaterThan(0);
 
-    const invoice = await issueInvoiceFromCharges(f.ctx, {
+    const invoice = await issueInvoiceFromCharges(ctx, {
       chargeIds: charges.map((c) => c.id),
       method: "CASH",
     });
     expect(invoice.number).toMatch(/^INV-BKK-\d{4}-\d{6}$/);
     expect(invoice.grandTotalSatang).toBe(35000);
-    expect(invoice.vatSatang + (35000 - invoice.vatSatang)).toBe(35000);
+    expect(invoice.vatSatang).toBe(2290);
+    const lineVat = await h.migrator.invoiceLine.findMany({ where: { invoiceId: invoice.id } });
+    expect(lineVat.reduce((s, l) => s + l.vatSatang, 0)).toBe(2290);
     expect(invoice.paidSatang).toBe(35000);
+    const billed = await h.migrator.auditLog.findMany({ where: { entityId: invoice.id } });
+    expect(billed.some((l) => l.action === "invoice.issued")).toBe(true);
 
     await expect(tryMutateIssuedInvoice(h.migrator, invoice.id, 1)).rejects.toThrow(
       /P0001|แก้ไขไม่ได้|ใบก/,
     );
 
     await expect(
-      f.ctx.tx((tx) => tx.invoice.update({ where: { id: invoice.id }, data: { status: "DRAFT" } })),
+      h.migrator.invoice.update({ where: { id: invoice.id }, data: { status: "DRAFT" } }),
     ).rejects.toThrow(/ร่าง|แก้ไขไม่ได้|P0001/);
   });
 
   it("ออกบิลชุดเดียวกันพร้อมกันได้ครั้งเดียว", async () => {
     const f = await seedMiniClinic(h.migrator);
-    const checked = await checkInPet(f.ctx, { petId: f.pet.id, weightKg: "4" });
+    const ctx = staffContext(h.app, f);
+    const checked = await checkInPet(ctx, { petId: f.pet.id, weightKg: "4" });
     const charges = await h.migrator.chargeItem.findMany({ where: { encounterId: checked.encounterId } });
     const chargeIds = charges.map((c) => c.id);
     const results = await Promise.allSettled([
-      issueInvoiceFromCharges(f.ctx, { chargeIds, method: "CASH" }),
-      issueInvoiceFromCharges(f.ctx, { chargeIds, method: "CASH" }),
+      issueInvoiceFromCharges(ctx, { chargeIds, method: "CASH" }),
+      issueInvoiceFromCharges(ctx, { chargeIds, method: "CASH" }),
     ]);
     const ok = results.filter((r) => r.status === "fulfilled");
     const failed = results.filter((r) => r.status === "rejected");

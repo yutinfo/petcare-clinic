@@ -1,7 +1,7 @@
 import { beforeAll, describe, expect, it } from "vitest";
 import { getControlledRegister } from "./controlled-register";
 import { getPgHarness, type PgHarness } from "@/test/pg-harness";
-import { seedMiniClinic } from "@/test/clinic-fixture";
+import { seedMiniClinic, staffContext } from "@/test/clinic-fixture";
 
 let h: PgHarness;
 
@@ -12,6 +12,7 @@ beforeAll(async () => {
 describe("ทะเบียนยาควบคุม", () => {
   it("อ่านยอดจาก ledger ตรง ๆ มียอดยกมาจากเดือนก่อน และไม่แก้ตัวเลขให้ตรง", async () => {
     const f = await seedMiniClinic(h.migrator);
+    const ctx = staffContext(h.app, f);
     await h.migrator.product.update({
       where: { id: f.product.id },
       data: { isControlled: true, controlledClass: "วัตถุออกฤทธิ์ประเภท 2" },
@@ -43,13 +44,13 @@ describe("ทะเบียนยาควบคุม", () => {
     await move("DISPENSE", "-10", "2026-08-20T10:00:00+07:00");
     await move("DISPENSE", "-5", "2026-09-05T10:00:00+07:00");
 
-    const august = await getControlledRegister(f.ctx, { productId: f.product.id, yearMonth: "2026-08" });
+    const august = await getControlledRegister(ctx, { productId: f.product.id, yearMonth: "2026-08" });
     expect(august.lines).toHaveLength(2);
     expect(august.broughtForward).toBe("0.0000");
     expect(august.lastBalance).toBe("90.0000");
     expect(august.mismatch).toBe(false);
 
-    const september = await getControlledRegister(f.ctx, { productId: f.product.id, yearMonth: "2026-09" });
+    const september = await getControlledRegister(ctx, { productId: f.product.id, yearMonth: "2026-09" });
     expect(september.lines).toHaveLength(1);
     expect(september.broughtForward).toBe("90.0000");
     expect(september.lines[0]?.outbound).toBe("5.0000");
@@ -60,8 +61,9 @@ describe("ทะเบียนยาควบคุม", () => {
 
   it("ปฏิเสธยาที่ไม่ใช่ยาควบคุม", async () => {
     const f = await seedMiniClinic(h.migrator);
+    const ctx = staffContext(h.app, f);
     await expect(
-      getControlledRegister(f.ctx, { productId: f.product.id, yearMonth: "2026-09" }),
+      getControlledRegister(ctx, { productId: f.product.id, yearMonth: "2026-09" }),
     ).rejects.toThrow(/ไม่ใช่ยาควบคุม/);
   });
 });

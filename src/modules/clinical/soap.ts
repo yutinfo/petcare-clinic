@@ -1,4 +1,5 @@
 import { BusinessError } from "@/modules/shared";
+import { writeAuditLog } from "@/server/audit";
 import type { AppContext } from "@/server/context";
 
 export type SoapDraft = {
@@ -88,6 +89,12 @@ export async function signSoap(ctx: AppContext, soapNoteId: string) {
       data: { signedAt: new Date(), signedById: ctx.actor.membershipId ?? ctx.actor.userId },
     });
     ctx.emit("soap.signed", { soapNoteId: signed.id, encounterId: signed.encounterId });
+    await writeAuditLog(tx, ctx, {
+      action: "soap.signed",
+      entityType: "SoapNote",
+      entityId: signed.id,
+      after: { encounterId: signed.encounterId, signedAt: signed.signedAt!.toISOString() },
+    });
     return { id: signed.id, signedAt: signed.signedAt!.toISOString() };
   });
 }

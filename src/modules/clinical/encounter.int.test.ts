@@ -3,7 +3,7 @@ import { ForbiddenError } from "@/modules/shared";
 import { checkInPet, getEncounterWorkspace, saveSoapDraft, signSoap } from "@/modules/clinical";
 import { createAppContext } from "@/server/context";
 import { getPgHarness, type PgHarness } from "@/test/pg-harness";
-import { seedMiniClinic } from "@/test/clinic-fixture";
+import { seedMiniClinic, staffContext } from "@/test/clinic-fixture";
 
 let h: PgHarness;
 
@@ -14,15 +14,16 @@ beforeAll(async () => {
 describe("สิทธิ์ห้องตรวจ", () => {
   it("patient:read อย่างเดียวอ่าน SOAP ไม่ได้", async () => {
     const f = await seedMiniClinic(h.migrator);
-    const checked = await checkInPet(f.ctx, { petId: f.pet.id, weightKg: "5.2" });
-    const draft = await saveSoapDraft(f.ctx, {
+    const ctx = staffContext(h.app, f);
+    const checked = await checkInPet(ctx, { petId: f.pet.id, weightKg: "5.2" });
+    const draft = await saveSoapDraft(ctx, {
       encounterId: checked.encounterId,
       assessment: "ข้อมูลตรวจเฉพาะแพทย์",
     });
-    await signSoap(f.ctx, draft.id);
+    await signSoap(ctx, draft.id);
 
     const receptionist = createAppContext({
-      db: h.migrator,
+      db: h.app,
       tenantId: f.tenantId,
       branchId: f.branchId,
       actor: {
@@ -42,12 +43,13 @@ describe("สิทธิ์ห้องตรวจ", () => {
 
   it("อ่านเคสข้ามสาขาที่ไม่มีสิทธิ์ไม่ได้", async () => {
     const f = await seedMiniClinic(h.migrator);
-    const checked = await checkInPet(f.ctx, { petId: f.pet.id, weightKg: "5.2" });
+    const ctx = staffContext(h.app, f);
+    const checked = await checkInPet(ctx, { petId: f.pet.id, weightKg: "5.2" });
     const other = await h.migrator.branch.create({
       data: { tenantId: f.tenantId, code: "OTHER", name: "อีกสาขา" },
     });
     const restricted = createAppContext({
-      db: h.migrator,
+      db: h.app,
       tenantId: f.tenantId,
       branchId: other.id,
       actor: {

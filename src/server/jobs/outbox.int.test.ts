@@ -45,4 +45,32 @@ describe("OutboxEvent", () => {
     const done = await h.migrator.outboxEvent.findMany({ where: { tenantId } });
     expect(done[0]?.processedAt).not.toBeNull();
   });
+
+  it("rollback แล้ว emit ไม่ไปปนกับ tx ถัดไป", async () => {
+    const tenantId = randomUUID();
+    await h.migrator.tenant.create({
+      data: { id: tenantId, slug: `obx2-${tenantId.slice(0, 8)}`, legalName: "บี", displayName: "บี" },
+    });
+    const ctx = createAppContext({ db: h.migrator, tenantId, actor: SYSTEM_ACTOR });
+    await expect(
+      ctx.tx(async (tx) => {
+        await tx.owner.create({
+          data: { tenantId, code: "O-FAIL1", firstName: "ล้ม", searchKey: "" },
+        });
+        ctx.emit("owner.failed", { tenantId });
+        throw new Error("บังคับ rollback");
+      }),
+    ).rejects.toThrow(/บังคับ rollback/);
+
+    await ctx.tx(async (tx) => {
+      await tx.owner.create({
+        data: { tenantId, code: "O-OK01", firstName: "รอด", searchKey: "" },
+      });
+    });
+
+    const owners = await h.migrator.owner.findMany({ where: { tenantId } });
+    const events = await h.migrator.outboxEvent.findMany({ where: { tenantId } });
+    expect(owners.map((o) => o.code)).toEqual(["O-OK01"]);
+    expect(events).toHaveLength(0);
+  });
 });

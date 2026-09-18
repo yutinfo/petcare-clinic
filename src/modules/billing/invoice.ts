@@ -1,6 +1,7 @@
 import { Prisma, type InvoiceDocType, type PaymentMethod } from "@prisma/client";
 import { consumeFefo } from "@/modules/inventory";
 import { bahtText, BusinessError, buddhistYearPeriod, formatSatangTh } from "@/modules/shared";
+import { writeAuditLog } from "@/server/audit";
 import { computeInvoiceTotals, formatDocumentNumber, nextDocumentNumber } from "@/modules/tax";
 import type { AppContext } from "@/server/context";
 
@@ -195,6 +196,12 @@ export async function issueInvoiceFromCharges(ctx: AppContext, input: IssueInvoi
     }
 
     ctx.emit("invoice.issued", { invoiceId: invoice.id, number, grandTotalSatang: totals.grandTotalSatang });
+    await writeAuditLog(tx, ctx, {
+      action: "invoice.issued",
+      entityType: "Invoice",
+      entityId: invoice.id,
+      after: { number, grandTotalSatang: totals.grandTotalSatang },
+    });
 
     return {
       id: invoice.id,

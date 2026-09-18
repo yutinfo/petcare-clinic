@@ -16,6 +16,9 @@ export async function addPosLine(
 ) {
   ctx.can("billing:charge");
   if (!ctx.branchId) throw new BusinessError("ต้องระบุสาขา");
+  if (!/^\d+(\.\d{1,4})?$/.test(input.qty.trim()) || Number(input.qty) <= 0) {
+    throw new BusinessError("จำนวนต้องมากกว่าศูนย์");
+  }
 
   return ctx.tx(async (tx) => {
     const product = await tx.product.findFirst({

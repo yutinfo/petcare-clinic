@@ -2,6 +2,7 @@ import { Prisma } from "@prisma/client";
 import { insertChargeItem } from "@/modules/billing";
 import { consumeFefo } from "@/modules/inventory";
 import { BusinessError } from "@/modules/shared";
+import { writeAuditLog } from "@/server/audit";
 import type { AppContext } from "@/server/context";
 
 export async function dispensePrescription(
@@ -77,6 +78,12 @@ export async function dispensePrescription(
       prescriptionId: rx.id,
       dispenseId: dispense.id,
       qtyBase: qty.toString(),
+    });
+    await writeAuditLog(tx, ctx, {
+      action: "prescription.dispensed",
+      entityType: "Dispense",
+      entityId: dispense.id,
+      after: { prescriptionId: rx.id, qtyBase: qty.toString() },
     });
 
     return {

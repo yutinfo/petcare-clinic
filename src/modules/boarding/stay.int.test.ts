@@ -2,7 +2,7 @@ import { beforeAll, describe, expect, it } from "vitest";
 import { billStayNights, checkInStay, checkOutStay } from "@/modules/boarding";
 import { bangkokBusinessDate } from "@/modules/shared";
 import { getPgHarness, type PgHarness } from "@/test/pg-harness";
-import { seedMiniClinic } from "@/test/clinic-fixture";
+import { seedMiniClinic, staffContext } from "@/test/clinic-fixture";
 
 let h: PgHarness;
 
@@ -13,6 +13,7 @@ beforeAll(async () => {
 describe("ค่าห้องฝากเลี้ยง", () => {
   it("คิดค่ารายวันแบบ idempotent — รันซ้ำยอดเท่าเดิม", async () => {
     const f = await seedMiniClinic(h.migrator);
+    const ctx = staffContext(h.app, f);
     const kennel = await h.migrator.resource.create({
       data: {
         tenantId: f.tenantId,
@@ -22,21 +23,22 @@ describe("ค่าห้องฝากเลี้ยง", () => {
         name: "กรง 1",
       },
     });
-    const checkInAt = new Date("2026-09-15T10:00:00+07:00");
-    const stay = await checkInStay(f.ctx, {
+    const today = bangkokBusinessDate();
+    const asOf = new Date(`${today}T09:00:00+07:00`);
+    const checkInAt = new Date(asOf.getTime() - 2 * 86_400_000);
+    const expectedOut = bangkokBusinessDate(new Date(asOf.getTime() + 5 * 86_400_000));
+    const stay = await checkInStay(ctx, {
       petId: f.pet.id,
       kennelResourceId: kennel.id,
-      expectedOutAt: "2026-09-18T10:00:00+07:00",
+      expectedOutAt: `${expectedOut}T18:00`,
       vaccineVerified: true,
     });
     await h.migrator.stay.update({
       where: { id: stay.id },
       data: { checkInAt },
     });
-
-    const asOf = new Date("2026-09-17T09:00:00+07:00");
-    const first = await billStayNights(f.ctx, stay.id, asOf);
-    const second = await billStayNights(f.ctx, stay.id, asOf);
+    const first = await billStayNights(ctx, stay.id, asOf);
+    const second = await billStayNights(ctx, stay.id, asOf);
     expect(first.billedDates.length).toBeGreaterThan(0);
     expect(second.billedDates).toEqual([]);
     expect(first.totalSatang).toBe(first.billedDates.length * 50000);
@@ -47,6 +49,7 @@ describe("ค่าห้องฝากเลี้ยง", () => {
 
   it("เข้าวันนี้ ออกพรุ่งนี้คิดหนึ่งคืน ไม่คิดวันออก", async () => {
     const f = await seedMiniClinic(h.migrator);
+    const ctx = staffContext(h.app, f);
     const kennel = await h.migrator.resource.create({
       data: {
         tenantId: f.tenantId,
@@ -75,7 +78,7 @@ describe("ค่าห้องฝากเลี้ยง", () => {
         dailyRateSatang: 50000,
       },
     });
-    await checkOutStay(f.ctx, stay.id);
+    await checkOutStay(ctx, stay.id);
     const nights = await h.migrator.chargeItem.findMany({ where: { stayId: stay.id } });
     expect(nights).toHaveLength(1);
     expect(nights[0]?.amountSatang).toBe(50000);
@@ -84,6 +87,7 @@ describe("ค่าห้องฝากเลี้ยง", () => {
 
   it("ไม่มีรายการ BOARD-NIGHT แล้วเช็คอินไม่ได้", async () => {
     const f = await seedMiniClinic(h.migrator);
+    const ctx = staffContext(h.app, f);
     await h.migrator.serviceItem.delete({ where: { id: f.board.id } });
     const kennel = await h.migrator.resource.create({
       data: {
@@ -95,10 +99,10 @@ describe("ค่าห้องฝากเลี้ยง", () => {
       },
     });
     await expect(
-      checkInStay(f.ctx, {
+      checkInStay(ctx, {
         petId: f.pet.id,
         kennelResourceId: kennel.id,
-        expectedOutAt: "2026-09-20T18:00:00+07:00",
+        expectedOutAt: `${bangkokBusinessDate(new Date(Date.now() + 3 * 86_400_000))}T18:00`,
         vaccineVerified: true,
       }),
     ).rejects.toThrow(/ตั้งค่า/);

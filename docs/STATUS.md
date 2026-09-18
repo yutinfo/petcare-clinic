@@ -5,9 +5,9 @@
 > อ่านคู่กับ [AGENTS.md](../AGENTS.md) ซึ่งเป็นกติกาที่ไม่เปลี่ยนบ่อย
 > ส่วนไฟล์นี้คือสิ่งที่เปลี่ยนทุกวัน
 
-**อัปเดตล่าสุด:** 2026-09-18 (ตอบคำถามครบยกเว้น Q5 LINE — ทำทะเบียนยาควบคุม)
+**อัปเดตล่าสุด:** 2026-09-18 (ปิด CQ-01–CQ-07)
 **เฟสปัจจุบัน:** เฟส 1 MVP ใช้งานได้ในคลินิกตัวอย่าง + เฟส 2 แกนฝากเลี้ยง/กรูมมิ่ง/ภาษีออกบิล
-**สถานะ:** 🟢 DEF P1 ปิดแล้ว · ทะเบียนยาควบคุมพิมพ์ได้ · Q5 LINE ยังไม่ทำ · Q6 VAT สินค้ายังรอผู้ทำบัญชี
+**สถานะ:** 🟢 ปิด DEF-01–10 และ CQ-01–07 · Q5 LINE ยังไม่ทำ · Q6 VAT สินค้ายังรอผู้ทำบัญชี
 
 **AI ตัวถัดไปเริ่มยังไง:** `git pull` → คัดลอก `.env.example` เป็น `.env` → `docker compose up -d` → `npx prisma migrate deploy` → `npx prisma db seed` → `npm run dev` → เปิด http://localhost:3000
 บัญชีทดลอง (รหัส `demo1234` ทั้งหมด):
@@ -19,6 +19,27 @@
 ---
 
 ## 1. ทำเสร็จแล้ว
+
+### 2026-09-18 — ปิด CQ-01–CQ-07
+
+ตรวจด้วย `npm run typecheck` + `npm run lint` + `npm test` (32) + `npm run test:int` (21, Docker)
+
+| CQ | แก้ที่ | สถานะการตรวจสอบ |
+| --- | --- | --- |
+| CQ-01 zod + จำนวนยาต้องเป็นบวก | `prescribeInputSchema`, `prescribe.ts`, `prescribeAction`, `pos.ts` | ✅ unit schema ปฏิเสธ `-2` และวัน 0; int ไม่สร้าง Prescription |
+| CQ-02 outbox ต่อทรานแซกชัน | `src/server/context.ts` AsyncLocalStorage | ✅ int: rollback แล้ว tx ถัดไปไม่มี event ค้าง |
+| CQ-03 เรียก writeAuditLog | SOAP ลงนาม, สั่งยา, จ่ายยา, ออกบิล | ✅ int: `soap.signed` และ `invoice.issued` มีแถว AuditLog |
+| CQ-04 fixture พนักงาน + app_user | `staffContext(h.app, seed)` | ✅ เทส SOAP/บิล/ยา/ฝาก/เช็คอิน/เคสใช้ h.app |
+| CQ-05 assert VAT จริง | `invoice.int.test.ts` คาด 2,290 | ✅ int ผ่าน — ถ้าสูตรผิดเทสแดง |
+| CQ-06 lint relative ข้ามโมดูล | `eslint.config.mjs` + `lint-boundary.test.ts` | ✅ unit บล็อก `../clinical/soap` ให้อนุญาต `./dose` |
+| CQ-07 เทสไม่ผูกนาฬิกาตายตัว | stay/dispense ใช้วันธุรกิจไทยเลื่อนจากวันนี้ | ✅ stay.int.test 3 เคสผ่าน |
+
+### 2026-09-18 — รีวิวคุณภาพโค้ด (ไม่แก้โค้ดธุรกิจ)
+
+- ตรวจ Server Actions/use-case, transaction/outbox, audit, fixture/assertion ของเทส และกฎ import; จุดแข็งที่เห็นคือแยกโมดูลธุรกิจ, ใช้ Decimal/สตางค์ และมีเทส PostgreSQL จริง แต่ยังมีช่องว่างตาม CQ ใน §2
+- `npm run typecheck` / `npm run lint` → exit 0 หลังเพิ่มสคริปต์; `npm test` → 26 passed; `npm run test:int` → **18 passed / 1 failed** จากเทสฝากเลี้ยงที่ผูกกับเวลาจริง (CQ-07) ไม่ได้แก้/skip เทสเพื่อให้ผ่าน
+- `npx tsx scripts/review-code-quality.ts` → exit 0: ยืนยัน CQ-01–03 ด้วย `app_user` + actor พนักงานใน testcontainer และ CQ-06 ด้วย ESLint API; เป็นสคริปต์แสดงหลักฐาน ไม่ใช่ regression test ที่รับรองพฤติกรรมผิด
+- แก้เฉพาะ STATUS และเพิ่มสคริปต์ข้างต้น; ไม่รัน build/UI/e2e รอบนี้เพราะไม่ได้แก้แอป และไม่อ้างว่าตรวจทุกเส้นทางแล้ว
 
 ### 2026-09-18 — ทะเบียนยาควบคุมตามคำตอบ Q3
 
@@ -109,6 +130,7 @@
 | ออกแบบคอนโซลผู้ดูแล 22 หน้าจอ (ADM-01…17, PLT-01…05) + เมทริกซ์สิทธิ์ + ช่องว่างสคีมา G1-G5 | `docs/12-admin-console.md` (ใหม่), `docs/01-architecture.md` §4, `AGENTS.md` §4 | เอกสารออกแบบล้วน ยังไม่มีโค้ด — ทุกฟิลด์ที่อ้างถึงตรวจกับ `prisma/schema.prisma` แล้ว |
 | ผังเส้นทางทั้งระบบ (sitemap) ครอบคลุม staff / portal / platform / API + ตารางเส้นทาง settings → ADM | `docs/01-architecture.md` §4.1 | เอกสารล้วน — เส้นทางที่มีอยู่จริงตรวจกับ `src/app/` แล้ว ที่เหลือเป็นเป้าหมายการออกแบบ |
 | ออกแบบรองรับสองภาษา ไทย/อังกฤษ 100% — คลังข้อความ, error เป็น code+params, ข้อมูล/เอกสารสองภาษา, เกณฑ์ทดสอบ | `docs/13-i18n.md` (ใหม่), `AGENTS.md` (กติกาภาษา + แผนที่เอกสาร), `docs/12` ADM-18, `docs/01` §4.1 | เอกสารออกแบบล้วน — ยังไม่เลือกไลบรารี (Q8) และยังไม่แตะโค้ด |
+| หน้าแรก `/` เป็นหน้าเว็บจริง — ทางเข้าพนักงาน (`/login`) และเจ้าของสัตว์ (`/portal/login`) + ชื่อคลินิกจาก subdomain | `src/app/page.tsx`, `src/server/public-tenant.ts` (ใหม่) | ✅ `typecheck` + `lint` + `npm test` (26 ผ่าน) + HTTP 200 จริงที่ `/` มีลิงก์ทั้งสองทางและชื่อคลินิกจากฐานข้อมูล · **หนี้:** ข้อความยังฝังในไฟล์ รอ i18n ระยะ A (docs/13) · เส้นทาง redirect ของผู้ที่ล็อกอินแล้วไม่ได้แก้และไม่ได้ทดสอบซ้ำในรอบนี้ |
 
 ### 2026-09-17 — ออกแบบระบบทั้งชุด
 
@@ -170,6 +192,51 @@
 ---
 
 ## 2. คิวงานถัดไป (เรียงตามลำดับที่ควรทำ)
+
+### รีวิวคุณภาพโค้ด 2026-09-18 — CQ-01–CQ-07 ปิดแล้ว 2026-09-18
+
+ทุกรายการยังไม่แก้/ยังไม่มอบหมาย; P1 = กระทบความถูกต้องหรือหลักฐานย้อนหลัง ควรแก้ก่อนใช้งานจริง, P2 = ปรับเครื่องมือตรวจและการดูแลโค้ด ไม่ใช่ข้อเสนอ refactor ทั้งระบบ
+
+#### CQ-01 · P1 · Validation/Pharmacy — TypeScript type แทน runtime validation ไม่ได้ · ✅ ปิด
+
+- หลักฐาน: `src/app/(staff)/[branch]/encounters/[id]/actions.ts:72` ส่ง input เข้า `prescribe` ตรง ๆ ไม่มี zod; `src/modules/pharmacy/prescribe.ts:60` สาขากรอก doseAmount ไม่ตรวจค่าบวก/จำนวนวัน เหมือนสาขาคำนวณ mg/kg; การค้น `zod`, `safeParse`, `z.object` ใน src ไม่พบ schema
+- ทำซ้ำ: `npx tsx scripts/review-code-quality.ts` → doseAmount `-2`, durationDays `7`, BID สร้างใบสั่งยา totalQtyBase `-28` และข้อความ “กินครั้งละ -2 เม็ด” สำเร็จ ไม่ได้ทดสอบการให้ยาจริง
+- ปรับปรุง: ใช้ zod schema ร่วมที่ขอบ client/server ตาม AGENTS §6 และ docs/09; enforce กฎจำนวนยาใน use-case ทุกเส้นทาง เพิ่มเทสค่าติดลบ/ศูนย์/รูปแบบผิดที่ต้องไม่สร้าง Prescription/Outbox; สำรวจ vitals/stock/POS actions ที่รับข้อมูลตรงด้วย
+
+#### CQ-02 · P1 · Transaction — event buffer มีอายุเท่ากับ context แทน transaction · ✅ ปิด
+
+- หลักฐาน: `src/server/context.ts:36,46,51–60` เก็บ pending นอก callback และล้างเฉพาะเส้นทางสำเร็จ
+- ทำซ้ำ: ใน context เดิม สร้าง owner + emit แล้ว throw ให้ rollback จากนั้นเรียก tx อ่านข้อมูล → ผล `ownerRows=0` แต่ `eventRows=1`; event ของงานล้มถูก flush โดย tx ถัดไปจริง
+- ปรับปรุง: ผูก buffer/emit กับ transaction ที่เป็นเจ้าของ ไม่ใช้ array ร่วมระหว่าง concurrent tx; เทส rollback แล้ว reuse context และ concurrent tx ที่สำเร็จ/ล้มแยกกัน โดย event ต้อง commit/rollback พร้อมข้อมูลของตัวเอง
+
+#### CQ-03 · P1 · Audit — helper มีอยู่แต่ไม่มี use-case เรียก · ✅ ปิด
+
+- หลักฐาน: `src/server/audit.ts:13` ประกาศ writeAuditLog; `rg -n 'writeAuditLog|auditLog\.' src` พบเฉพาะตัว helper (และ probe ของรอบนี้) ไม่พบการเรียกใน use-case; migrations มี trigger ห้ามแก้ AuditLog แต่ไม่ได้สร้าง log ให้ธุรกรรม
+- ทำซ้ำ: script สร้าง/ลงนาม SOAP ผ่าน actor พนักงาน → signed สำเร็จ แต่ auditRows `0`; OutboxEvent ไม่ได้บันทึกผู้กระทำ/before/after แทน audit ตาม docs/08 §3
+- ปรับปรุง: เชื่อม audit กับ use-case สำคัญที่มีอยู่แล้ว เช่น SOAP/ยา/ออกบิล ใน tx เดียวกัน ระบุ actor/entity/action ตามเอกสาร; เทส log ของงานสำเร็จและไม่เหลือ log เมื่องาน rollback ไม่เพิ่มเพียง helper ใหม่ที่ไม่มีคนเรียก
+
+#### CQ-04 · P2 · Integration tests — fixture ข้ามทั้ง RLS และสิทธิ์พนักงาน · ✅ ปิด
+
+- หลักฐาน: `src/test/clinic-fixture.ts:76–80` สร้าง ctx ด้วย db ที่รับมาและ SYSTEM_ACTOR; billing/pharmacy/boarding เรียก seedMiniClinic(h.migrator) แล้วใช้ f.ctx ทดสอบ use-case ขณะที่ system ข้าม ability checks; แม้เทส encounter ใช้ actor staff ก็ยังส่ง h.migrator
+- ผลกระทบ: เทสเหล่านี้พิสูจน์ business/trigger ได้ แต่ไม่พิสูจน์ว่าบทบาทจริงทำรายการได้หรือ RLS ป้องกันเส้นทางนั้น มีชุด RLS แยกอยู่แล้วจึงไม่ใช่การกล่าวว่าไม่มีเทส RLS
+- ปรับปรุง: ใช้ migrator เฉพาะ seed และใช้ h.app + actor/permissions จริงเรียก use-case; เพิ่มกรณีไม่มีสิทธิ์/ต่าง tenant สำหรับ workflow สำคัญ โดยไม่ทำซ้ำทุก permutation ที่ไม่มีความเสี่ยง
+
+#### CQ-05 · P2 · Test assertion — assertion VAT ผ่านได้เมื่อ VAT ผิด · ✅ ปิด
+
+- หลักฐาน: `src/modules/billing/invoice.int.test.ts:26` ใช้ `vat + (35000 - vat) === 35000` ซึ่งยังเป็นจริงเมื่อ vat เป็น 0 หรือค่า integer อื่น ไม่ได้พิสูจน์สูตร VAT ตามชื่อเทส
+- ปรับปรุง: assert ค่าคาดหวังที่คำนวณอิสระ (fixture นี้ VAT รวมในราคา 35,000 สตางค์ อัตรา 7% → VAT 2,290) และผลรวม InvoiceLine.vatSatang เท่ากับยอด VAT บิล; ทดสอบว่าเปลี่ยนผลคำนวณผิดแล้วเทสแดง ไม่ลบเทสเดิมเพื่อกลบปัญหา
+
+#### CQ-06 · P2 · Architecture/lint — relative import หลบกฎ public API ได้ · ✅ ปิด
+
+- หลักฐาน: `eslint.config.mjs:38` จับเฉพาะรูปแบบ `@/modules/*/*`; script เรียก ESLint.lintText ในบริบท src/modules/billing: import `@/modules/clinical/soap` ได้ no-restricted-imports แต่ `../clinical/soap` ได้ errors `[]`
+- ผลกระทบ: กฎที่ AGENTS §6 กำหนดว่าเข้าผ่าน index เท่านั้นยังบังคับได้ไม่ครบ; เป็นช่องว่างเครื่องมือตรวจ ไม่ได้ยืนยันว่ามี relative import ผิดในโค้ดปัจจุบัน
+- ปรับปรุง: ตรวจ resolved path ทั้ง alias/relative โดยยังอนุญาต import ภายในโมดูลเดียวกัน; เพิ่มเคสทดสอบกฎ lint สำหรับทั้งสองรูปแบบและ public API ที่ถูกต้อง
+
+#### CQ-07 · P2 · Tests/CI — วันเวลาตายตัวทำให้เทสแดงเอง · ✅ ปิด
+
+- หลักฐาน: `src/modules/boarding/stay.int.test.ts:25–37` เรียก checkInStay ซึ่งใช้ new Date() แต่ expectedOutAt ตายตัว `2026-09-18T10:00:00+07:00` แล้วจึงพยายามแก้ checkInAt ย้อนหลังภายหลัง
+- ผลรันจริง: `npm run test:int` วันที่ 18 ก.ย. หลัง 10:00 → เคส “คิดค่ารายวันแบบ idempotent — รันซ้ำยอดเท่าเดิม” ล้มตอนสร้าง stay ด้วย `range lower bound must be less than or equal to range upper bound`; 18 passed / 1 failed, CI เรียกชุดเดียวกัน
+- ปรับปรุง: ควบคุมนาฬิกาหรือ seed ช่วงเวลาให้สอดคล้องก่อนเรียก use-case; ยังคง assert ว่าคิดซ้ำไม่เพิ่มยอด สำรวจ `dispense.int.test.ts:21` ที่ใช้ล็อต `2026-10-01` เป็นล็อตใช้ได้ด้วย เพราะจะหมดอายุจริงตามเวลา ห้ามเลื่อนวันไปไกล ๆ อย่างเดียวแล้วถือว่าแก้ถาวร
 
 ### Defect จากการตรวจ 2026-09-18 — ปิดแล้ว 2026-09-18
 

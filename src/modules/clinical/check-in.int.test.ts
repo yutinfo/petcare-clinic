@@ -1,8 +1,8 @@
 import { randomUUID } from "node:crypto";
 import { beforeAll, describe, expect, it } from "vitest";
 import { checkInPet } from "@/modules/clinical";
-import { createAppContext, SYSTEM_ACTOR } from "@/server/context";
 import { getPgHarness, type PgHarness } from "@/test/pg-harness";
+import { staffContext } from "@/test/clinic-fixture";
 
 let h: PgHarness;
 
@@ -37,12 +37,7 @@ describe("เช็คอิน", () => {
       },
     });
 
-    const ctx = createAppContext({
-      db: h.migrator,
-      tenantId,
-      branchId,
-      actor: SYSTEM_ACTOR,
-    });
+    const ctx = staffContext(h.app, { tenantId, branchId, actorId: randomUUID() });
 
     const first = await checkInPet(ctx, { petId: pet.id, weightKg: "12.4", chiefComplaint: "อาเจียน" });
     expect(first.reused).toBe(false);

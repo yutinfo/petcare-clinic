@@ -1,5 +1,9 @@
+import { AsyncLocalStorage } from "node:async_hooks";
 import type { Prisma, PrismaClient } from "@prisma/client";
 import { buildAbility, type Resource } from "@/server/policy/ability";
+
+type PendingEvent = { type: string; payload: Prisma.InputJsonValue };
+const emitStore = new AsyncLocalStorage<PendingEvent[]>();
 
 export type ActorKind = "staff" | "owner" | "system";
 
@@ -33,7 +37,6 @@ type CreateContextInput = {
 
 export function createAppContext(input: CreateContextInput): AppContext {
   const ability = buildAbility(input.actor);
-  const pending: { type: string; payload: Prisma.InputJsonValue }[] = [];
 
   return {
     tenantId: input.tenantId,
@@ -43,23 +46,29 @@ export function createAppContext(input: CreateContextInput): AppContext {
       ability.assert(permission, resource);
     },
     emit(type, payload) {
+      const pending = emitStore.getStore();
+      if (!pending) {
+        throw new Error("ctx.emit ต้องเรียกใน ctx.tx");
+      }
       pending.push({ type, payload });
     },
     async tx(fn) {
       return input.db.$transaction(async (tx) => {
-        await tx.$executeRaw`SELECT set_config('app.tenant_id', ${input.tenantId}, true)`;
-        const result = await fn(tx);
-        if (pending.length > 0) {
-          await tx.outboxEvent.createMany({
-            data: pending.map((event) => ({
-              tenantId: input.tenantId,
-              type: event.type,
-              payload: event.payload,
-            })),
-          });
-          pending.length = 0;
-        }
-        return result;
+        const pending: PendingEvent[] = [];
+        return emitStore.run(pending, async () => {
+          await tx.$executeRaw`SELECT set_config('app.tenant_id', ${input.tenantId}, true)`;
+          const result = await fn(tx);
+          if (pending.length > 0) {
+            await tx.outboxEvent.createMany({
+              data: pending.map((event) => ({
+                tenantId: input.tenantId,
+                type: event.type,
+                payload: event.payload,
+              })),
+            });
+          }
+          return result;
+        });
       });
     },
   };

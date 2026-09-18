@@ -1,22 +1,37 @@
 import { Prisma } from "@prisma/client";
+import { z } from "zod";
 import { BusinessError } from "@/modules/shared";
+import { writeAuditLog } from "@/server/audit";
 import type { AppContext } from "@/server/context";
 import { buildInstructionTh, calculateDose, frequencyTimesPerDay, parseStrengthMg } from "./dose";
 
-export type PrescribeInput = {
-  encounterId: string;
-  productId: string;
-  mgPerKg?: string;
-  route: string;
-  frequencyCode: string;
-  durationDays: number;
-  doseAmount?: string;
-  withFood?: boolean;
-  instructionTh?: string;
-  warningTh?: string;
-};
+export const prescribeInputSchema = z.object({
+  encounterId: z.string().min(8, "ไม่พบเคส"),
+  productId: z.string().min(8, "ไม่พบยา"),
+  mgPerKg: z
+    .string()
+    .regex(/^\d+(\.\d+)?$/, "ขนาด มก./กก. ไม่ถูกต้อง")
+    .optional(),
+  route: z.string().min(1, "ระบุช่องทางยา"),
+  frequencyCode: z.string().min(1, "ระบุความถี่"),
+  durationDays: z.coerce.number().int("จำนวนวันต้องเป็นจำนวนเต็ม").min(1, "จำนวนวันต้องมากกว่าศูนย์").max(365),
+  doseAmount: z
+    .string()
+    .regex(/^\d+(\.\d{1,4})?$/, "จำนวนต่อครั้งไม่ถูกต้อง")
+    .optional(),
+  withFood: z.boolean().optional(),
+  instructionTh: z.string().optional(),
+  warningTh: z.string().optional(),
+});
 
-export async function prescribe(ctx: AppContext, input: PrescribeInput) {
+export type PrescribeInput = z.infer<typeof prescribeInputSchema>;
+
+export async function prescribe(ctx: AppContext, raw: PrescribeInput) {
+  const parsed = prescribeInputSchema.safeParse(raw);
+  if (!parsed.success) {
+    throw new BusinessError(parsed.error.issues[0]?.message ?? "ข้อมูลใบสั่งยาไม่ถูกต้อง");
+  }
+  const input = parsed.data;
   ctx.can("pharmacy:prescribe");
   if (!ctx.branchId) throw new BusinessError("ต้องระบุสาขา");
   if (!ctx.actor.membershipId) throw new BusinessError("บัญชีนี้ยังไม่ได้ผูกเป็นพนักงาน");
@@ -59,7 +74,9 @@ export async function prescribe(ctx: AppContext, input: PrescribeInput) {
       totalQtyBase = new Prisma.Decimal(calc.totalQtyBase);
     } else if (input.doseAmount) {
       doseAmount = new Prisma.Decimal(input.doseAmount);
+      if (doseAmount.lte(0)) throw new BusinessError("จำนวนยาต่อครั้งต้องมากกว่าศูนย์");
       totalQtyBase = doseAmount.mul(timesPerDay).mul(input.durationDays);
+      if (totalQtyBase.lte(0)) throw new BusinessError("จำนวนยาทั้งหมดต้องมากกว่าศูนย์");
     } else {
       throw new BusinessError("กรอกขนาดยา (มก./กก.) หรือจำนวนต่อครั้ง");
     }
@@ -107,6 +124,12 @@ export async function prescribe(ctx: AppContext, input: PrescribeInput) {
     });
 
     ctx.emit("prescription.created", { prescriptionId: rx.id, encounterId: encounter.id });
+    await writeAuditLog(tx, ctx, {
+      action: "prescription.created",
+      entityType: "Prescription",
+      entityId: rx.id,
+      after: { productId: product.id, totalQtyBase: totalQtyBase.toString() },
+    });
 
     return {
       id: rx.id,

@@ -10,7 +10,7 @@ import {
   setEncounterStatus,
   signSoap,
 } from "@/modules/clinical";
-import { prescribe } from "@/modules/pharmacy";
+import { prescribe, prescribeInputSchema } from "@/modules/pharmacy";
 import { issueInvoiceFromCharges } from "@/modules/billing";
 import { fail, isRedirectError } from "@/lib/action-result";
 import { getStaffContext } from "@/server/staff-context";
@@ -76,8 +76,12 @@ export async function prescribeAction(
   input: Parameters<typeof prescribe>[1],
 ) {
   try {
+    const parsed = prescribeInputSchema.safeParse(input);
+    if (!parsed.success) {
+      return { ok: false as const, message: parsed.error.issues[0]?.message ?? "ข้อมูลใบสั่งยาไม่ถูกต้อง" };
+    }
     const ctx = await getStaffContext(branch);
-    const rx = await prescribe(ctx, input);
+    const rx = await prescribe(ctx, parsed.data);
     return { ok: true as const, ...rx };
   } catch (err) {
     return fail(err);
