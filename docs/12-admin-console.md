@@ -63,6 +63,7 @@ src/app/(platform)/admin/…              ← คอนโซลแพลตฟ�
 | ADM-15 | นำเข้าข้อมูล | 📍 สาขา | `admin:settings` | ตาม [docs/11](11-data-import.md) |
 | ADM-16 | บันทึกการตรวจสอบ | 🏢 tenant | `report:tenant` | `AuditLog` (อ่านอย่างเดียว) |
 | ADM-17 | คำยินยอมและคำขอตาม PDPA | 🏢 tenant | `admin:settings` | `OwnerConsent` + **ตารางคำขอที่ยังไม่มี — ดู §6** |
+| ADM-18 | ความครบของการแปล (ไทย/อังกฤษ) | 🏢 tenant | `admin:catalog` | คีย์ใน `src/lib/i18n/` + `nameEn` ของแค็ตตาล็อก — ดู [docs/13 §9](13-i18n.md) |
 | PLT-01 | ทะเบียนคลินิก | แพลตฟอร์ม | `isPlatformRoot` | `Tenant` |
 | PLT-02 | แพ็กเกจและการสมัครใช้งาน | แพลตฟอร์ม | `isPlatformRoot` | `Plan`, `Subscription` |
 | PLT-03 | Feature flag | แพลตฟอร์ม | `isPlatformRoot` | `FeatureFlag` |
