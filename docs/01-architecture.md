@@ -164,9 +164,10 @@ src/
 │  │   ├─ inventory/             # สต็อก, PO, ตรวจนับ
 │  │   ├─ pos/                   # ขายหน้าร้าน
 │  │   ├─ billing/               # บิล, ใบกำกับภาษี, ปิดกะ
-│  │   └─ reports/
+│  │   ├─ reports/
+│  │   └─ settings/              # คอนโซลผู้ดูแลของคลินิก (docs/12)
 │  ├─ (portal)/                  # พอร์ทัลเจ้าของสัตว์
-│  ├─ (platform)/admin/          # แอดมิน SaaS
+│  ├─ (platform)/admin/          # แอดมิน SaaS (docs/12)
 │  └─ api/v1/...                 # REST + webhooks
 ├─ modules/                      # โดเมน (ห้าม import จาก next/*)
 │  ├─ identity/  crm/  patient/  scheduling/  clinical/
@@ -186,6 +187,72 @@ src/
 **กติกาการ import:** `app/` เรียก `modules/` ได้; `modules/` เรียกข้ามโดเมนได้เฉพาะผ่าน
 public API ของโมดูล (`modules/x/index.ts`) และห้าม `modules/` import อะไรจาก `app/`
 บังคับด้วย ESLint `import/no-restricted-paths`
+
+### 4.1 ผังเส้นทางทั้งระบบ (sitemap)
+
+ผังนี้คือ**เป้าหมายของการออกแบบ** ส่วนสถานะว่าทำถึงไหนแล้วอยู่ใน [docs/STATUS.md](STATUS.md)
+
+```
+สาธารณะ
+/                                     พาไปหน้าเข้าสู่ระบบตามบทบาท
+/login                                พนักงาน — อีเมล + รหัสผ่าน (+ TOTP)
+/portal/login                         เจ้าของสัตว์ — เบอร์โทร + OTP
+
+แอปพนักงาน — (staff)/[branch]/…       branch = รหัสสาขา เช่น /bkk
+/[branch]                             แดชบอร์ดวันนี้
+/[branch]/reception                   รับสัตว์ walk-in → เปิด Encounter
+/[branch]/queue                       กระดานคิวและสถานะห้องตรวจ
+/[branch]/appointments                ปฏิทินนัดและทรัพยากร
+/[branch]/clients                     ทะเบียนเจ้าของ (ค้นหาช่องเดียว)
+/[branch]/clients/[ownerId]           โปรไฟล์เจ้าของ + สัตว์ในบ้าน
+/[branch]/pets/[petId]                แฟ้มสัตว์ ประวัติ น้ำหนัก วัคซีน
+/[branch]/encounters/[id]             ห้องตรวจ — SOAP, vital, สั่งยา/แล็บ
+/[branch]/pharmacy                    ห้องยา — จ่ายยา FEFO
+/[branch]/inventory                   คลัง — สต็อก รับเข้า ตรวจนับ
+/[branch]/inventory/controlled        ทะเบียนยาควบคุม (docs/05 §6.1)
+/[branch]/pos                         ขายหน้าร้าน + รวมบิล
+/[branch]/billing                     ใบกำกับ ใบลดหนี้ ปิดกะเงินสด (docs/06)
+/[branch]/boarding                    ผังกรง เช็คอิน-เอาท์ (docs/04)
+/[branch]/grooming                    คิวช่างและงานอาบน้ำตัดขน (docs/04)
+/[branch]/reports                     รายงานสาขา/ผู้บริหาร (docs/06, docs/10)
+/[branch]/settings/…                  คอนโซลผู้ดูแล (docs/12) — ดูตารางด้านล่าง
+
+พอร์ทัลเจ้าของสัตว์ — /portal (docs/07)
+/portal                               หน้าแรก: สัตว์ของฉัน นัดที่จะถึง ฝากเลี้ยง ใบเสร็จ
+/portal/pets/[petId]                  ประวัติสัตว์ วัคซีน ยาที่ได้รับ
+/portal/booking                       จองคิวตรวจ/กรูมมิ่ง/ห้องฝาก
+/portal/stays/[stayId]                ติดตามสัตว์ที่ฝากอยู่ + CareLog ที่แชร์
+/portal/invoices                      ใบเสร็จย้อนหลัง
+/portal/profile                       ข้อมูลติดต่อและคำยินยอม PDPA
+
+แพลตฟอร์ม SaaS — (platform)/admin (docs/12 §4 PLT-*)
+/admin                                ภาพรวมระบบ
+/admin/tenants  /admin/tenants/[id]   ทะเบียนคลินิก (PLT-01)
+/admin/plans                          แพ็กเกจและการสมัครใช้งาน (PLT-02)
+/admin/flags                          feature flag (PLT-03)
+/admin/onboarding                     wizard เปิดคลินิกใหม่ (PLT-04)
+/admin/usage                          การใช้งานและสุขภาพระบบ (PLT-05)
+
+API
+/api/auth/[...nextauth]               Auth.js (พนักงาน)
+/api/auth/otp                         ขอ/ยืนยัน OTP เจ้าของสัตว์
+/api/v1/health                        health check
+/api/v1/…                             REST ตามสัญญาใน docs/09
+/api/v1/webhooks/…                    webhook ขาเข้า (docs/09 §4.9)
+```
+
+**เส้นทางในคอนโซลผู้ดูแล** — รหัส ADM อ้างถึง [docs/12 §3](12-admin-console.md)
+
+| เส้นทาง | หน้าจอ | เส้นทาง | หน้าจอ |
+| --- | --- | --- | --- |
+| `settings/users` | ADM-01 | `settings/resources` | ADM-09 |
+| `settings/roles` | ADM-02 | `settings/shifts` | ADM-10 |
+| `settings/branches` | ADM-03 | `settings/policies` | ADM-11 |
+| `settings/tax` | ADM-04 | `settings/notifications` | ADM-12 |
+| `settings/tax/sequences` | ADM-05 | `settings/reference` | ADM-13 |
+| `settings/catalog/services` | ADM-06 | `settings/suppliers` | ADM-14 |
+| `settings/catalog/products` | ADM-07 | `settings/import` | ADM-15 |
+| `settings/catalog/tax-review` | ADM-08 | `settings/audit` · `settings/pdpa` | ADM-16 · ADM-17 |
 
 ### โครงของ use-case หนึ่งตัว
 

@@ -1,4 +1,5 @@
 import { Prisma } from "@prisma/client";
+import { insertChargeItem } from "@/modules/billing";
 import { formatDocumentNumber, nextDocumentNumber } from "@/modules/tax";
 import { buddhistYearPeriod, BusinessError } from "@/modules/shared";
 import type { AppContext } from "@/server/context";
@@ -82,6 +83,25 @@ export async function checkInPet(ctx: AppContext, input: CheckInInput) {
       await tx.pet.update({
         where: { id: pet.id },
         data: { currentWeightKg: weight, currentWeightAt: new Date() },
+      });
+    }
+
+    const consult = await tx.serviceItem.findFirst({
+      where: { tenantId: ctx.tenantId, code: "CONSULT-OPD", isActive: true },
+    });
+    if (consult) {
+      await insertChargeItem(tx, ctx.tenantId, branch.id, ctx.actor.membershipId, {
+        ownerId: pet.ownerId,
+        petId: pet.id,
+        sourceType: "ENCOUNTER",
+        encounterId: encounter.id,
+        itemType: "SERVICE",
+        serviceItemId: consult.id,
+        description: consult.name,
+        qty: "1",
+        unitName: "ครั้ง",
+        unitPriceSatang: consult.priceSatang,
+        taxCode: consult.taxCode,
       });
     }
 

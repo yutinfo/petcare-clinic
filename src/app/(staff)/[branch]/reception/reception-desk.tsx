@@ -1,8 +1,13 @@
 "use client";
 
+import Link from "next/link";
 import { useEffect, useMemo, useRef, useState, useTransition } from "react";
+import { ENCOUNTER_STATUS, ENCOUNTER_TYPE } from "@/components/staff/labels";
+import { WaitMinutes } from "@/components/staff/live";
+import { AlertChip, EmptyState, Field, Notice, PageHeader, StatusBadge } from "@/components/staff/ui";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
+import { Select } from "@/components/ui/select";
 import type { OwnerSearchHit, PetSearchHit, SpeciesOption } from "@/modules/crm";
 import { checkInAction, createCustomerAction, searchAction } from "../actions";
 
@@ -23,18 +28,18 @@ export function ReceptionDesk({
   branch,
   species,
   initialWaiting,
+  initialQuery,
 }: {
   branch: string;
   species: SpeciesOption[];
   initialWaiting: Waiting[];
+  initialQuery: string;
 }) {
-  const [query, setQuery] = useState("");
+  const [query, setQuery] = useState(initialQuery);
   const [hits, setHits] = useState<OwnerSearchHit[]>([]);
   const [message, setMessage] = useState<string | null>(null);
   const [creating, setCreating] = useState(false);
-  const [selected, setSelected] = useState<{ owner: OwnerSearchHit; pet: PetSearchHit } | null>(
-    null,
-  );
+  const [selected, setSelected] = useState<{ owner: OwnerSearchHit; pet: PetSearchHit } | null>(null);
   const [pending, start] = useTransition();
   const searchBox = useRef<HTMLInputElement>(null);
 
@@ -53,7 +58,7 @@ export function ReceptionDesk({
         if (!res.ok) setMessage(res.message);
         else {
           setHits(res.hits);
-          setMessage(res.hits.length === 0 ? "ไม่พบลูกค้า — สร้างใหม่ได้ด้านล่าง" : null);
+          setMessage(res.hits.length === 0 ? "ไม่พบลูกค้า — สร้างใหม่ด้านล่างได้เลย" : null);
         }
       });
     }, 180);
@@ -63,10 +68,11 @@ export function ReceptionDesk({
   return (
     <div className="grid gap-5 lg:grid-cols-[minmax(0,1fr)_20rem]">
       <section className="space-y-4">
-        <div>
-          <h1 className="text-2xl font-semibold">ค้นหาแล้วเปิดเคส</h1>
-          <p className="text-sm text-stone-500">พิมพ์เบอร์โทร ชื่อเจ้าของ ชื่อสัตว์ หรือรหัส</p>
-        </div>
+        <PageHeader
+          eyebrow="เคาน์เตอร์รับสัตว์"
+          title="ค้นหาแล้วเปิดเคส"
+          description="พิมพ์เบอร์โทร ชื่อเจ้าของ ชื่อสัตว์ หรือรหัส — เลือกตัวสัตว์ ชั่งน้ำหนัก แล้วเปิดเคส"
+        />
         <Input
           ref={searchBox}
           value={query}
@@ -74,50 +80,68 @@ export function ReceptionDesk({
           placeholder="เช่น 0812345678 หรือ ข้าวปุ้น"
           className="h-14 text-lg"
         />
-        {message ? <p className="text-sm text-stone-600">{message}</p> : null}
+        {message ? <Notice tone={hits.length === 0 ? "warn" : "error"}>{message}</Notice> : null}
+
+        {query.trim().length < 2 && !selected ? (
+          <EmptyState title="เริ่มจากช่องค้นหาด้านบน" hint="พิมพ์อย่างน้อย 2 ตัวอักษร หรือสร้างลูกค้าใหม่ถ้ามาครั้งแรก" />
+        ) : null}
 
         <div className="space-y-3">
           {hits.map((owner) => (
-            <article key={owner.id} className="rounded-xl border border-stone-200 bg-white p-4">
+            <article key={owner.id} className="clinic-card p-4">
               <div className="flex flex-wrap items-baseline justify-between gap-2">
                 <h2 className="font-semibold">
-                  {owner.displayName}{" "}
+                  <Link href={`/${branch}/clients/${owner.id}`} className="hover:underline">
+                    {owner.displayName}
+                  </Link>{" "}
                   <span className="font-normal text-stone-400">{owner.code}</span>
                 </h2>
                 <p className="text-sm text-stone-500">{owner.phone ?? "ไม่มีเบอร์"}</p>
               </div>
-              <ul className="mt-3 grid gap-2 sm:grid-cols-2">
-                {owner.pets.map((pet) => (
-                  <li key={pet.id}>
-                    <button
-                      type="button"
-                      onClick={() => {
-                        setSelected({ owner, pet });
-                        setCreating(false);
-                      }}
-                      className="flex min-h-14 w-full flex-col items-start rounded-lg border border-stone-200 px-3 py-2 text-left hover:border-teal-700 hover:bg-teal-50"
-                    >
-                      <span className="font-medium">
-                        {pet.name}{" "}
-                        <span className="font-normal text-stone-400">{pet.speciesNameTh}</span>
-                      </span>
-                      <span className="text-xs text-stone-500">{pet.code}</span>
-                      {pet.alerts.length > 0 ? (
-                        <span className="mt-1 text-xs font-medium text-red-700">
-                          ⚠ {pet.alerts.map((a) => a.label).join(" · ")}
-                        </span>
-                      ) : null}
-                    </button>
-                  </li>
-                ))}
-              </ul>
+              {owner.pets.length === 0 ? (
+                <p className="mt-3 text-sm text-stone-400">ยังไม่มีสัตว์ในทะเบียน — สร้างลูกค้าใหม่ไม่ได้ ต้องเพิ่มสัตว์</p>
+              ) : (
+                <ul className="mt-3 grid gap-2 sm:grid-cols-2">
+                  {owner.pets.map((pet) => {
+                    const on = selected?.pet.id === pet.id;
+                    return (
+                      <li key={pet.id}>
+                        <button
+                          type="button"
+                          onClick={() => {
+                            setSelected({ owner, pet });
+                            setCreating(false);
+                          }}
+                          className={`flex min-h-14 w-full flex-col items-start rounded-xl border px-3 py-2 text-left ${
+                            on ? "border-coral bg-orange-50" : "border-stone-200 hover:border-coral hover:bg-orange-50"
+                          }`}
+                        >
+                          <span className="font-medium">
+                            {pet.name}{" "}
+                            <span className="font-normal text-stone-400">{pet.speciesNameTh}</span>
+                          </span>
+                          <span className="text-xs text-stone-500">{pet.code}</span>
+                          {pet.alerts.length > 0 ? (
+                            <span className="mt-1 text-xs font-medium text-rose-700">
+                              {pet.alerts.map((a) => a.label).join(" · ")}
+                            </span>
+                          ) : null}
+                        </button>
+                      </li>
+                    );
+                  })}
+                </ul>
+              )}
             </article>
           ))}
         </div>
 
-        <div className="rounded-xl border border-dashed border-stone-300 bg-white/70 p-4">
+        <div className="clinic-card border-dashed p-4">
           <div className="flex items-center justify-between gap-2">
-            <h2 className="font-semibold">ลูกค้าใหม่</h2>
+            <div>
+              <h2 className="font-semibold">ลูกค้าใหม่</h2>
+              <p className="text-sm text-stone-500">กรอก 4 ช่อง แล้วไปชั่งน้ำหนักต่อ</p>
+            </div>
             <Button type="button" variant="outline" onClick={() => setCreating((v) => !v)}>
               {creating ? "ปิดฟอร์ม" : "สร้างลูกค้าใหม่"}
             </Button>
@@ -135,9 +159,7 @@ export function ReceptionDesk({
               onError={setMessage}
               start={start}
             />
-          ) : (
-            <p className="mt-2 text-sm text-stone-500">กรอก 4 ช่อง: ชื่อเจ้าของ เบอร์ ชื่อสัตว์ ชนิด</p>
-          )}
+          ) : null}
         </div>
 
         {selected ? (
@@ -155,25 +177,26 @@ export function ReceptionDesk({
       <aside className="space-y-3">
         <h2 className="font-semibold">คิววันนี้</h2>
         {initialWaiting.length === 0 ? (
-          <p className="rounded-xl border border-stone-200 bg-white p-4 text-sm text-stone-500">
-            ยังไม่มีเคสรอตรวจ
-          </p>
+          <EmptyState title="ยังไม่มีเคสรอตรวจ" hint="เมื่อเปิดเคส จะโชว์ที่นี่และบนกระดานคิว" />
         ) : (
           <ul className="space-y-2">
             {initialWaiting.map((enc) => (
-              <li key={enc.id} className="rounded-xl border border-stone-200 bg-white p-3">
-                <a href={`/${branch}/encounters/${enc.id}`} className="block">
-                  <p className="text-xs text-stone-400">{enc.number}</p>
-                  <p className="font-medium">
-                    {enc.petName} · {enc.ownerName}
-                  </p>
-                  <p className="text-xs text-stone-500">
-                    {enc.status === "WAITING" ? "รอตรวจ" : "กำลังตรวจ"}
-                    {enc.chiefComplaint ? ` · ${enc.chiefComplaint}` : ""}
-                  </p>
-                </a>
-              </li>
-            ))}
+                <li key={enc.id}>
+                  <Link href={`/${branch}/encounters/${enc.id}`} className="clinic-card block p-3">
+                    <div className="flex items-center justify-between gap-2">
+                      <p className="text-xs text-stone-400">{enc.number}</p>
+                      <StatusBadge value={enc.status} map={ENCOUNTER_STATUS} />
+                    </div>
+                    <p className="mt-1 font-medium">
+                      {enc.petName} · {enc.ownerName}
+                    </p>
+                    <p className="text-xs text-stone-500">
+                      <WaitMinutes iso={enc.arrivedAt} />
+                      {enc.chiefComplaint ? ` · ${enc.chiefComplaint}` : ""}
+                    </p>
+                  </Link>
+                </li>
+              ))}
           </ul>
         )}
       </aside>
@@ -199,7 +222,7 @@ function NewCustomerForm({
   const defaultSpecies = species[0]?.id ?? "";
   return (
     <form
-      className="mt-3 grid gap-3 sm:grid-cols-2"
+      className="mt-4 grid gap-3 sm:grid-cols-2"
       onSubmit={(e) => {
         e.preventDefault();
         const data = new FormData(e.currentTarget);
@@ -226,34 +249,26 @@ function NewCustomerForm({
         });
       }}
     >
-      <label className="space-y-1 text-sm">
-        <span>ชื่อเจ้าของ</span>
-        <Input name="ownerFirstName" required />
-      </label>
-      <label className="space-y-1 text-sm">
-        <span>เบอร์โทร</span>
-        <Input name="phone" inputMode="tel" required />
-      </label>
-      <label className="space-y-1 text-sm">
-        <span>ชื่อสัตว์</span>
+      <Field label="ชื่อเจ้าของ">
+        <Input name="ownerFirstName" required autoComplete="name" />
+      </Field>
+      <Field label="เบอร์โทร">
+        <Input name="phone" inputMode="tel" required autoComplete="tel" />
+      </Field>
+      <Field label="ชื่อสัตว์">
         <Input name="petName" required />
-      </label>
-      <label className="space-y-1 text-sm">
-        <span>ชนิดสัตว์</span>
-        <select
-          name="speciesId"
-          defaultValue={defaultSpecies}
-          className="h-12 w-full rounded-lg border border-stone-300 bg-white px-3"
-        >
+      </Field>
+      <Field label="ชนิดสัตว์">
+        <Select name="speciesId" defaultValue={defaultSpecies}>
           {species.map((s) => (
             <option key={s.id} value={s.id}>
               {s.nameTh}
             </option>
           ))}
-        </select>
-      </label>
+        </Select>
+      </Field>
       <div className="sm:col-span-2">
-        <Button type="submit" className="h-12 bg-teal-800 hover:bg-teal-700" disabled={pending}>
+        <Button type="submit" className="h-12 w-full" disabled={pending}>
           บันทึกลูกค้าแล้วไปชั่งน้ำหนัก
         </Button>
       </div>
@@ -283,7 +298,7 @@ function CheckInPanel({
 
   return (
     <form
-      className="space-y-3 rounded-xl border-2 border-teal-800 bg-white p-4"
+      className="clinic-card space-y-3 border-2 border-coral p-5"
       onSubmit={(e) => {
         e.preventDefault();
         const data = new FormData(e.currentTarget);
@@ -304,41 +319,42 @@ function CheckInPanel({
           <h2 className="text-xl font-semibold">
             {selected.pet.name} · {selected.owner.displayName}
           </h2>
+          <p className="text-sm text-stone-500">
+            {selected.pet.speciesNameTh} · {selected.pet.code}
+          </p>
         </div>
         <button type="button" className="text-sm text-stone-500 underline" onClick={onCancel}>
           ยกเลิก
         </button>
       </div>
-      {highAlerts.length > 0 ? (
-        <p className="rounded-md bg-red-50 px-3 py-2 text-sm font-medium text-red-800">
-          ⚠ {highAlerts.map((a) => a.label).join(" · ")}
-        </p>
-      ) : null}
+      <AlertChip labels={highAlerts.map((a) => a.label)} />
       <div className="grid gap-3 sm:grid-cols-2">
-        <label className="space-y-1 text-sm">
-          <span>น้ำหนัก (กก.)</span>
+        <Field label="น้ำหนัก (กก.)" hint="ใช้คำนวณขนาดยาในห้องตรวจ">
           <Input
             name="weightKg"
             inputMode="decimal"
-            placeholder={selected.pet.currentWeightKg ?? "เช่น 5.2"}
+            required
+            defaultValue={selected.pet.currentWeightKg ?? ""}
+            placeholder="เช่น 5.2"
             autoFocus
           />
-        </label>
-        <label className="space-y-1 text-sm">
-          <span>ประเภทเคส</span>
-          <select name="type" defaultValue="OPD" className="h-12 w-full rounded-lg border border-stone-300 bg-white px-3">
-            <option value="OPD">ตรวจทั่วไป</option>
-            <option value="VACCINE">วัคซีน</option>
-            <option value="RECHECK">ตรวจซ้ำ</option>
-            <option value="EMERGENCY">ฉุกเฉิน</option>
-          </select>
-        </label>
+        </Field>
+        <Field label="ประเภทเคส">
+          <Select name="type" defaultValue="OPD">
+            {Object.entries(ENCOUNTER_TYPE)
+              .filter(([k]) => ["OPD", "VACCINE", "RECHECK", "EMERGENCY"].includes(k))
+              .map(([k, v]) => (
+                <option key={k} value={k}>
+                  {v}
+                </option>
+              ))}
+          </Select>
+        </Field>
       </div>
-      <label className="block space-y-1 text-sm">
-        <span>อาการเบื้องต้น</span>
+      <Field label="อาการเบื้องต้น">
         <Input name="chiefComplaint" placeholder="เช่น อาเจียน 1 วัน" />
-      </label>
-      <Button type="submit" className="h-12 w-full bg-teal-800 hover:bg-teal-700" disabled={pending}>
+      </Field>
+      <Button type="submit" className="h-12 w-full" variant="coral" disabled={pending}>
         {pending ? "กำลังเปิดเคส…" : "เปิดเคส"}
       </Button>
     </form>

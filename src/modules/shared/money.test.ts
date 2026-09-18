@@ -3,6 +3,7 @@ import {
   addSatang,
   bahtStringToSatang,
   formatSatangTh,
+  qtyTimesUnitSatang,
   satangToBahtString,
   subtractSatang,
 } from "./money";
@@ -27,5 +28,11 @@ describe("money (สตางค์)", () => {
 
   it("ปฏิเสธทศนิยมที่เป็น float", () => {
     expect(() => addSatang(1.5)).toThrow(/สตางค์/);
+  });
+
+  it("คูณจำนวน × ราคาต่อหน่วยเป็นสตางค์โดยปัดครึ่งขึ้น", () => {
+    expect(qtyTimesUnitSatang("14", 1200)).toBe(16800);
+    expect(qtyTimesUnitSatang("0.5", 1200)).toBe(600);
+    expect(qtyTimesUnitSatang("1.5", 7)).toBe(11);
   });
 });

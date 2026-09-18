@@ -3,6 +3,13 @@ import Credentials from "next-auth/providers/credentials";
 import bcrypt from "bcryptjs";
 import { TOTP, Secret } from "otpauth";
 import { prisma } from "@/server/db/prisma";
+import {
+  RATE_WINDOW_MS,
+  STAFF_LOGIN_MAX,
+  consumeRateLimit,
+  isRateLimited,
+  resetRateLimit,
+} from "@/server/auth/rate-limit";
 import { verifyOwnerOtp } from "@/server/auth/otp";
 import { getMigrator } from "@/server/db/migrator";
 import type { SessionBranch } from "@/types/next-auth";
@@ -48,6 +55,29 @@ async function loadStaffClaims(userId: string) {
   };
 }
 
+async function loadOwnerClaims(userId: string) {
+  const db = getMigrator();
+  const owner = await db.owner.findFirst({
+    where: { userId, deletedAt: null },
+    orderBy: { createdAt: "asc" },
+  });
+  if (!owner) return null;
+  const tenant = await db.tenant.findUnique({ where: { id: owner.tenantId } });
+  if (!tenant) return null;
+  const branches = await db.branch.findMany({
+    where: { tenantId: tenant.id, isActive: true },
+    orderBy: { isHeadOffice: "desc" },
+  });
+  return {
+    tenantId: tenant.id,
+    tenantSlug: tenant.slug,
+    tenantName: tenant.displayName,
+    ownerId: owner.id,
+    defaultBranchCode: branches[0]?.code.toLowerCase(),
+    branches: branches.map((b) => ({ id: b.id, code: b.code, name: b.name })),
+  };
+}
+
 export const { handlers, auth, signIn, signOut } = NextAuth({
   trustHost: true,
   session: { strategy: "jwt", maxAge: 60 * 60 * 12 },
@@ -67,11 +97,19 @@ export const { handlers, auth, signIn, signOut } = NextAuth({
           .toLowerCase();
         const password = String(credentials?.password ?? "");
         if (!email || !password) return null;
+        const loginKey = `staff-login:${email}`;
+        if (await isRateLimited(loginKey, STAFF_LOGIN_MAX)) return null;
 
         const user = await prisma.user.findUnique({ where: { email } });
-        if (!user || user.status !== "ACTIVE" || !user.passwordHash) return null;
+        if (!user || user.status !== "ACTIVE" || !user.passwordHash) {
+          await consumeRateLimit(loginKey, STAFF_LOGIN_MAX, RATE_WINDOW_MS);
+          return null;
+        }
         const ok = await bcrypt.compare(password, user.passwordHash);
-        if (!ok) return null;
+        if (!ok) {
+          await consumeRateLimit(loginKey, STAFF_LOGIN_MAX, RATE_WINDOW_MS);
+          return null;
+        }
 
         if (user.mfaEnabledAt && user.mfaSecret) {
           const token = String(credentials?.totp ?? "");
@@ -83,9 +121,13 @@ export const { handlers, auth, signIn, signOut } = NextAuth({
             period: 30,
             secret: Secret.fromBase32(user.mfaSecret),
           });
-          if (totp.validate({ token, window: 1 }) === null) return null;
+          if (totp.validate({ token, window: 1 }) === null) {
+            await consumeRateLimit(loginKey, STAFF_LOGIN_MAX, RATE_WINDOW_MS);
+            return null;
+          }
         }
 
+        await resetRateLimit(loginKey);
         await prisma.user.update({
           where: { id: user.id },
           data: { lastLoginAt: new Date() },
@@ -148,6 +190,18 @@ export const { handlers, auth, signIn, signOut } = NextAuth({
             token.branches = claims.branches;
           }
         }
+        if (user.kind === "owner" && user.id) {
+          const claims = await loadOwnerClaims(user.id);
+          if (claims) {
+            token.tenantId = claims.tenantId;
+            token.tenantSlug = claims.tenantSlug;
+            token.tenantName = claims.tenantName;
+            token.ownerId = claims.ownerId;
+            token.defaultBranchCode = claims.defaultBranchCode;
+            token.permissions = [];
+            token.branches = claims.branches;
+          }
+        }
       }
       return token;
     },
@@ -161,6 +215,7 @@ export const { handlers, auth, signIn, signOut } = NextAuth({
         tenantSlug: token.tenantSlug,
         tenantName: token.tenantName,
         membershipId: token.membershipId ?? null,
+        ownerId: token.ownerId,
         defaultBranchCode: token.defaultBranchCode,
         permissions: token.permissions ?? [],
         branches: token.branches ?? [],

@@ -5,3 +5,5 @@ export {
   type PetAlertView,
   type PetSearchHit,
 } from "./search-clients";
+export { getOwnerProfile, getPetProfile } from "./clients";
+export { listPortalHome, requestPortalBooking } from "./portal";

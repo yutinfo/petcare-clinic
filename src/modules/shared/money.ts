@@ -42,3 +42,19 @@ export function formatSatangTh(satang: number): string {
   const sign = satang < 0 ? "-" : "";
   return `${sign}${grouped}.${frac}`;
 }
+
+/**
+ * qty (ทศนิยมไม่เกิน 4 ตำแหน่ง) × ราคาต่อหน่วยเป็นสตางค์ แล้วปัดครึ่งขึ้นเป็นสตางค์เต็ม
+ * คำนวณด้วยจำนวนเต็ม — ห้ามใช้ float คูณเงิน
+ */
+export function qtyTimesUnitSatang(qty: string | number, unitPriceSatang: number): number {
+  assertSatang(unitPriceSatang, "unitPriceSatang");
+  const raw = typeof qty === "number" ? qty.toString() : qty.trim();
+  if (!/^\d+(\.\d{1,4})?$/.test(raw)) {
+    throw new Error(`จำนวนไม่ถูกต้อง: ${qty}`);
+  }
+  const [whole = "0", frac = ""] = raw.split(".");
+  const scaled = Number(whole) * 10_000 + Number((frac + "0000").slice(0, 4));
+  const product = scaled * unitPriceSatang;
+  return Math.trunc((product + 5_000) / 10_000);
+}

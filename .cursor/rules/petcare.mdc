@@ -17,3 +17,4 @@ alwaysApply: true
 - StockMovement / AuditLog / InvoiceLine เป็น append-only
 - ทุกตารางที่มี tenant_id ต้องมี RLS policy
 - ฟิลด์ใหม่ในสคีมาต้องใส่ @map("snake_case")
+- ห้ามผลิต AI Slop — ดู AGENTS.md §11 และเช็กลิสต์ §11.5 ก่อนส่งงาน

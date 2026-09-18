@@ -23,6 +23,7 @@ declare module "next-auth" {
       tenantSlug?: string;
       tenantName?: string;
       membershipId?: string | null;
+      ownerId?: string;
       defaultBranchCode?: string;
       permissions: string[];
       branches: SessionBranch[];
@@ -37,6 +38,7 @@ declare module "next-auth/jwt" {
     tenantSlug?: string;
     tenantName?: string;
     membershipId?: string;
+    ownerId?: string;
     defaultBranchCode?: string;
     permissions?: string[];
     branches?: SessionBranch[];

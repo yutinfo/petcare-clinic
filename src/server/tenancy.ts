@@ -13,6 +13,12 @@ export function tenantSlugFromHost(hostHeader: string | null): string | null {
   return slug;
 }
 
+const PUBLIC_FIRST = new Set(["login", "portal", "api"]);
+
 export function isStaffAppPath(pathname: string): boolean {
-  return /^\/[a-z0-9-]+\/(reception|patients|encounters)(\/|$)/.test(pathname);
+  const parts = pathname.split("/").filter(Boolean);
+  if (parts.length === 0) return false;
+  const first = parts[0]!.toLowerCase();
+  if (PUBLIC_FIRST.has(first)) return false;
+  return true;
 }

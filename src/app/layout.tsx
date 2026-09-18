@@ -17,7 +17,7 @@ export default function RootLayout({
 }: Readonly<{ children: React.ReactNode }>) {
   return (
     <html lang="th">
-      <body className={`${thai.className} min-h-screen antialiased`}>{children}</body>
+      <body className={`${thai.className} clinic-canvas min-h-screen antialiased`}>{children}</body>
     </html>
   );
 }

@@ -2,6 +2,7 @@
 
 import { useActionState, useState, useTransition } from "react";
 import Link from "next/link";
+import { Field, Notice } from "@/components/staff/ui";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { loginOwnerAction, requestOtpAction } from "./actions";
@@ -14,24 +15,21 @@ export function PortalLoginForm() {
 
   return (
     <form action={action} className="space-y-4">
-      <label className="block space-y-1">
-        <span className="text-sm font-medium">เบอร์โทร</span>
+      <Field label="เบอร์โทร">
         <Input
           name="phone"
           inputMode="tel"
           value={phone}
           onChange={(e) => setPhone(e.target.value)}
           required
+          autoComplete="tel"
         />
-      </label>
-      <label className="block space-y-1">
-        <span className="text-sm font-medium">รหัส OTP</span>
-        <Input name="otp" inputMode="numeric" maxLength={6} required />
-      </label>
-      {hint ? <p className="text-sm text-teal-800">{hint}</p> : null}
-      {state?.error ? (
-        <p className="rounded-md bg-red-50 px-3 py-2 text-sm text-red-800">{state.error}</p>
-      ) : null}
+      </Field>
+      <Field label="รหัส 6 หลัก">
+        <Input name="otp" inputMode="numeric" maxLength={6} required autoComplete="one-time-code" />
+      </Field>
+      {hint ? <Notice tone="ok">{hint}</Notice> : null}
+      {state?.error ? <Notice>{state.error}</Notice> : null}
       <div className="flex gap-2">
         <Button
           type="button"
@@ -49,14 +47,17 @@ export function PortalLoginForm() {
         >
           ขอรหัส
         </Button>
-        <Button type="submit" className="h-12 flex-1 bg-teal-800 hover:bg-teal-700" disabled={pending}>
+        <Button type="submit" className="h-12 flex-1" disabled={pending}>
           เข้าสู่ระบบ
         </Button>
       </div>
+      <p className="rounded-2xl bg-cream px-3 py-2 text-xs text-stone-500">
+        คลินิกตัวอย่าง: เบอร์ 0812345678 แล้วกดขอรหัส
+      </p>
       <p className="text-center text-sm text-stone-500">
         พนักงานคลินิก?{" "}
-        <Link href="/login" className="text-teal-800 underline">
-          เข้าสู่ระบบด้วยอีเมล
+        <Link href="/login" className="text-teal underline-offset-2 hover:underline">
+          เข้าด้วยอีเมล
         </Link>
       </p>
     </form>
