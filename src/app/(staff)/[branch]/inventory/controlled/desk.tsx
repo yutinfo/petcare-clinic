@@ -99,7 +99,9 @@ export function ControlledRegisterDesk({
         }}
       >
         {products.length === 0 ? (
-          <p className="text-sm text-stone-500">ยังไม่มียาที่ตั้งเป็นยาควบคุมในแค็ตตาล็อก</p>
+          <p className="text-sm text-stone-500">
+            ยังไม่มียาที่ตั้งเป็นยาควบคุม — ไปที่คลังสินค้าแล้วทำเครื่องหมายยาควบคุมก่อน จึงพิมพ์ทะเบียนได้
+          </p>
         ) : (
           <>
             <label className="space-y-1 text-sm">
@@ -131,7 +133,12 @@ export function ControlledRegisterDesk({
         )}
       </form>
 
-      {!report ? (
+      {products.length === 0 ? (
+        <EmptyState
+          title="ยังไม่มียาควบคุมในรายการ"
+          hint="ตั้งค่าที่หน้าคลังก่อน หน้านี้เป็นทะเบียนสำหรับพิมพ์และดาวน์โหลดเท่านั้น"
+        />
+      ) : !report ? (
         <EmptyState title="เลือกยาและเดือน" hint="ทะเบียนหนึ่งแผ่นต่อยาหนึ่งรายการ" />
       ) : (
         <article className="clinic-card print-sheet relative overflow-x-auto p-6">

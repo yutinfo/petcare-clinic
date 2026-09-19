@@ -88,6 +88,10 @@ const SOAP_TEMPLATES: Record<string, { label: string; s: string; o: string; a: s
 
 export function EncounterWorkspace({ branch, data }: { branch: string; data: Data }) {
   const router = useRouter();
+  const canRead = data.can.clinicalRead;
+  const canWrite = data.can.clinicalWrite;
+  const canSign = data.can.clinicalSign;
+  const canPrescribe = data.can.pharmacyPrescribe;
   const [tab, setTab] = useState<"soap" | "rx" | "orders">("soap");
   const [notice, setNotice] = useState<{ tone: "error" | "ok"; text: string } | null>(null);
   const [pending, start] = useTransition();
@@ -155,7 +159,7 @@ export function EncounterWorkspace({ branch, data }: { branch: string; data: Dat
         ) : null}
         <p className="text-sm text-stone-600">อาการ: {data.chiefComplaint ?? "—"}</p>
         <div className="flex flex-wrap gap-2">
-          {data.status === "WAITING" ? (
+          {canWrite && data.status === "WAITING" ? (
             <Button
               size="sm"
               disabled={pending}
@@ -169,7 +173,7 @@ export function EncounterWorkspace({ branch, data }: { branch: string; data: Dat
               เรียกเข้าตรวจ
             </Button>
           ) : null}
-          {data.status === "IN_PROGRESS" ? (
+          {canWrite && data.status === "IN_PROGRESS" ? (
             <>
               <Button
                 size="sm"
@@ -199,7 +203,7 @@ export function EncounterWorkspace({ branch, data }: { branch: string; data: Dat
               </Button>
             </>
           ) : null}
-          {data.status === "PENDING_RESULT" ? (
+          {canWrite && data.status === "PENDING_RESULT" ? (
             <Button
               size="sm"
               variant="outline"
@@ -242,48 +246,59 @@ export function EncounterWorkspace({ branch, data }: { branch: string; data: Dat
       </aside>
 
       <section className="clinic-card p-5">
-        <div className="mb-4 flex flex-wrap gap-2">
-          {(
-            [
-              ["soap", "SOAP"],
-              ["rx", "สั่งยา"],
-              ["orders", "คำสั่งแล็บ/หัตถการ"],
-            ] as const
-          ).map(([t, label]) => (
-            <button
-              key={t}
-              type="button"
-              onClick={() => setTab(t)}
-              className={`rounded-full px-4 py-2 text-sm font-medium ${tab === t ? "bg-teal text-white" : "bg-cream text-ink"}`}
-            >
-              {label}
-            </button>
-          ))}
-        </div>
+        {canRead ? (
+          <div className="mb-4 flex flex-wrap gap-2">
+            {(
+              [
+                ["soap", "SOAP"] as const,
+                ...(canPrescribe ? ([["rx", "สั่งยา"]] as const) : []),
+                ...(canWrite ? ([["orders", "คำสั่งแล็บ/หัตถการ"]] as const) : []),
+              ]
+            ).map(([t, label]) => (
+              <button
+                key={t}
+                type="button"
+                onClick={() => setTab(t)}
+                className={`rounded-full px-4 py-2 text-sm font-medium ${tab === t ? "bg-teal text-white" : "bg-cream text-ink"}`}
+              >
+                {label}
+              </button>
+            ))}
+          </div>
+        ) : null}
         {notice ? <Notice tone={notice.tone}>{notice.text}</Notice> : null}
 
-        {tab === "soap" ? (
+        {!canRead ? (
+          <p className="text-sm leading-relaxed text-stone-500">
+            เวชระเบียน สั่งยา และคำสั่งตรวจเป็นงานของสัตวแพทย์ — เคาน์เตอร์ดูข้อมูลสัตว์ เวลารอ
+            และคิดเงินจากแถบขวาได้ตามปกติ
+          </p>
+        ) : null}
+
+        {canRead && tab === "soap" ? (
           <div className="mt-3 space-y-3">
-            <div className="flex flex-wrap gap-2">
-              {Object.entries(SOAP_TEMPLATES).map(([k, v]) => (
-                <button
-                  key={k}
-                  type="button"
-                  className="rounded-full bg-sand px-3 py-1.5 text-xs font-medium"
-                  onClick={() =>
-                    setSoap((s) => ({
-                      ...s,
-                      subjective: v.s,
-                      objective: v.o,
-                      assessment: v.a,
-                      plan: v.p,
-                    }))
-                  }
-                >
-                  แม่แบบ: {v.label}
-                </button>
-              ))}
-            </div>
+            {canWrite ? (
+              <div className="flex flex-wrap gap-2">
+                {Object.entries(SOAP_TEMPLATES).map(([k, v]) => (
+                  <button
+                    key={k}
+                    type="button"
+                    className="rounded-full bg-sand px-3 py-1.5 text-xs font-medium"
+                    onClick={() =>
+                      setSoap((s) => ({
+                        ...s,
+                        subjective: v.s,
+                        objective: v.o,
+                        assessment: v.a,
+                        plan: v.p,
+                      }))
+                    }
+                  >
+                    แม่แบบ: {v.label}
+                  </button>
+                ))}
+              </div>
+            ) : null}
             {SOAP_FIELDS.map((field) => (
               <label key={field.key} className="block space-y-1 text-sm">
                 <span className="flex items-baseline gap-2">
@@ -293,53 +308,57 @@ export function EncounterWorkspace({ branch, data }: { branch: string; data: Dat
                 </span>
                 <Textarea
                   value={soap[field.key]}
-                  disabled={Boolean(soap.signedAt)}
+                  disabled={!canWrite || Boolean(soap.signedAt)}
                   onChange={(e) => setSoap((s) => ({ ...s, [field.key]: e.target.value }))}
                 />
               </label>
             ))}
-            <div className="flex flex-wrap gap-2">
-              <Button
-                disabled={pending || Boolean(soap.signedAt)}
-                onClick={() =>
-                  start(async () => {
-                    const res = await saveSoapAction(branch, {
-                      encounterId: data.id,
-                      soapNoteId: soap.id,
-                      ...soap,
-                    });
-                    if (!res.ok) setMsg(res.message);
-                    else {
-                      setSoap((s) => ({ ...s, id: res.id }));
-                      setOk("บันทึกร่างแล้ว");
-                      refresh();
+            {canWrite ? (
+              <div className="flex flex-wrap gap-2">
+                <Button
+                  disabled={pending || Boolean(soap.signedAt)}
+                  onClick={() =>
+                    start(async () => {
+                      const res = await saveSoapAction(branch, {
+                        encounterId: data.id,
+                        soapNoteId: soap.id,
+                        ...soap,
+                      });
+                      if (!res.ok) setMsg(res.message);
+                      else {
+                        setSoap((s) => ({ ...s, id: res.id }));
+                        setOk("บันทึกร่างแล้ว");
+                        refresh();
+                      }
+                    })
+                  }
+                >
+                  บันทึกร่าง
+                </Button>
+                {canSign ? (
+                  <Button
+                    variant="coral"
+                    disabled={pending || Boolean(soap.signedAt) || !soap.id}
+                    onClick={() =>
+                      start(async () => {
+                        if (!soap.id) return;
+                        if (!askToProceed("ลงนามแล้วจะแก้ SOAP ไม่ได้ ต้องใช้บันทึกเพิ่มเท่านั้น ดำเนินการต่อ?")) return;
+                        const res = await signSoapAction(branch, soap.id);
+                        if (!res.ok) setMsg(res.message);
+                        else {
+                          setSoap((s) => ({ ...s, signedAt: res.signedAt }));
+                          setOk("ลงนามแล้ว");
+                          refresh();
+                        }
+                      })
                     }
-                  })
-                }
-              >
-                บันทึกร่าง
-              </Button>
-              <Button
-                variant="coral"
-                disabled={pending || Boolean(soap.signedAt) || !soap.id}
-                onClick={() =>
-                  start(async () => {
-                    if (!soap.id) return;
-                    if (!askToProceed("ลงนามแล้วจะแก้ SOAP ไม่ได้ ต้องใช้บันทึกเพิ่มเท่านั้น ดำเนินการต่อ?")) return;
-                    const res = await signSoapAction(branch, soap.id);
-                    if (!res.ok) setMsg(res.message);
-                    else {
-                      setSoap((s) => ({ ...s, signedAt: res.signedAt }));
-                      setOk("ลงนามแล้ว");
-                      refresh();
-                    }
-                  })
-                }
-              >
-                ลงนาม
-              </Button>
-            </div>
-            {soap.signedAt ? (
+                  >
+                    ลงนาม
+                  </Button>
+                ) : null}
+              </div>
+            ) : null}
+            {soap.signedAt && canWrite ? (
               <AddendumForm
                 branch={branch}
                 soapNoteId={soap.id!}
@@ -352,25 +371,32 @@ export function EncounterWorkspace({ branch, data }: { branch: string; data: Dat
                   refresh();
                 }}
               />
-            ) : (
+            ) : canWrite ? (
               <p className="text-xs text-stone-400">บันทึกร่างก่อน แล้วค่อยลงนาม — หลังลงนามแก้ไม่ได้</p>
-            )}
-            <VitalsForm
-              branch={branch}
-              encounterId={data.id}
-              vitals={data.vitals}
-              pending={pending}
-              start={start}
-              onError={setMsg}
-              onDone={() => {
-                setOk("บันทึกสัญญาณชีพแล้ว");
-                refresh();
-              }}
-            />
+            ) : null}
+            {canWrite ? (
+              <VitalsForm
+                branch={branch}
+                encounterId={data.id}
+                vitals={data.vitals}
+                pending={pending}
+                start={start}
+                onError={setMsg}
+                onDone={() => {
+                  setOk("บันทึกสัญญาณชีพแล้ว");
+                  refresh();
+                }}
+              />
+            ) : data.vitals.length > 0 ? (
+              <p className="text-sm text-stone-600">
+                T {data.vitals[0]?.temperatureC ?? "—"}°C · HR {data.vitals[0]?.heartRateBpm ?? "—"} · RR{" "}
+                {data.vitals[0]?.respRateBpm ?? "—"}
+              </p>
+            ) : null}
           </div>
         ) : null}
 
-        {tab === "rx" ? (
+        {canPrescribe && tab === "rx" ? (
           <RxForm
             branch={branch}
             encounterId={data.id}
@@ -383,7 +409,7 @@ export function EncounterWorkspace({ branch, data }: { branch: string; data: Dat
           />
         ) : null}
 
-        {tab === "orders" ? (
+        {canWrite && tab === "orders" ? (
           <OrdersForm
             branch={branch}
             encounterId={data.id}

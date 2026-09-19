@@ -117,30 +117,33 @@ export function PosDesk({
               <EmptyState title="ไม่พบสินค้าหน้าร้าน" hint="ยาที่ต้องมีใบสั่งจะไม่โชว์ที่นี่ — จ่ายที่ห้องยา" />
             ) : (
               <div className="grid gap-3 sm:grid-cols-2">
-                {visible.map((p) => (
-                  <button
-                    key={p.id}
-                    type="button"
-                    disabled={!ownerId || pending}
-                    className="clinic-card p-4 text-left disabled:opacity-50"
-                    onClick={() =>
-                      start(async () => {
-                        if (!ownerId) return;
-                        const res = await addPosLineAction(branch, { ownerId, productId: p.id, qty: "1" });
-                        if (!res.ok) setMsg(res.message);
-                        else router.refresh();
-                      })
-                    }
-                  >
-                    <p className="font-medium">{p.name}</p>
-                    <p className="mt-1 text-lg font-semibold tabular-nums text-teal">
-                      {formatSatangTh(p.defaultPriceSatang)} บาท
-                    </p>
-                    <p className="text-xs text-stone-500">
-                      คงเหลือ {p.qtyOnHand} {p.baseUnit}
-                    </p>
-                  </button>
-                ))}
+                {visible.map((p) => {
+                  const outOfStock = Number(p.qtyOnHand) <= 0;
+                  return (
+                    <button
+                      key={p.id}
+                      type="button"
+                      disabled={!ownerId || pending || outOfStock}
+                      className="clinic-card p-4 text-left disabled:opacity-50"
+                      onClick={() =>
+                        start(async () => {
+                          if (!ownerId || outOfStock) return;
+                          const res = await addPosLineAction(branch, { ownerId, productId: p.id, qty: "1" });
+                          if (!res.ok) setMsg(res.message);
+                          else router.refresh();
+                        })
+                      }
+                    >
+                      <p className="font-medium">{p.name}</p>
+                      <p className="mt-1 text-lg font-semibold tabular-nums text-teal">
+                        {formatSatangTh(p.defaultPriceSatang)} บาท
+                      </p>
+                      <p className={`text-xs ${outOfStock ? "text-coral" : "text-stone-500"}`}>
+                        {outOfStock ? "หมดสต็อก — รับของเข้าที่คลังก่อน" : `คงเหลือ ${p.qtyOnHand} ${p.baseUnit}`}
+                      </p>
+                    </button>
+                  );
+                })}
               </div>
             )}
           </>

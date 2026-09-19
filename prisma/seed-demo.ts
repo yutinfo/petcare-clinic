@@ -471,6 +471,8 @@ async function seedCatalogAndStock(
 
   const amox = await prisma.product.findFirst({ where: { tenantId, code: "AMX250" } });
   const food = await prisma.product.findFirst({ where: { tenantId, code: "FOOD3KG" } });
+  const flea = await prisma.product.findFirst({ where: { tenantId, code: "FLEA-SPOT" } });
+  const toy = await prisma.product.findFirst({ where: { tenantId, code: "TOY-BALL" } });
   if (amox) {
     await ensureLotWithQty(prisma, {
       tenantId,
@@ -502,6 +504,42 @@ async function seedCatalogAndStock(
       expiryDate: new Date("2027-01-15"),
       qty: 30,
       cost: 52000,
+      receivedById,
+    });
+  }
+  if (pred) {
+    await ensureLotWithQty(prisma, {
+      tenantId,
+      branchId,
+      productId: pred.id,
+      lotNo: "PRED-2401",
+      expiryDate: new Date("2027-06-01"),
+      qty: 50,
+      cost: 300,
+      receivedById,
+    });
+  }
+  if (flea) {
+    await ensureLotWithQty(prisma, {
+      tenantId,
+      branchId,
+      productId: flea.id,
+      lotNo: "FLEA-2401",
+      expiryDate: new Date("2027-12-01"),
+      qty: 12,
+      cost: 18000,
+      receivedById,
+    });
+  }
+  if (toy) {
+    await ensureLotWithQty(prisma, {
+      tenantId,
+      branchId,
+      productId: toy.id,
+      lotNo: "TOY-2401",
+      expiryDate: new Date("2028-01-01"),
+      qty: 20,
+      cost: 4000,
       receivedById,
     });
   }

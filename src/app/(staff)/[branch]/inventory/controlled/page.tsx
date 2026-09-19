@@ -27,7 +27,7 @@ export default async function ControlledRegisterPage({
           <PageHeader
             eyebrow="ยาควบคุม"
             title="ทะเบียนยาควบคุม"
-            description="หนึ่งแผ่นต่อยาหนึ่งรายการต่อสาขาต่อเดือน · ยอดคงเหลืออ่านจาก ledger ตรง ๆ ไม่คำนวณใหม่"
+            description="หนึ่งแผ่นต่อยาหนึ่งรายการต่อสาขาต่อเดือน · ยอดคงเหลือตามที่บันทึกตอนรับเข้าหรือจ่ายออก ไม่คำนวณย้อนใหม่"
           />
         </div>
         <ControlledRegisterDesk

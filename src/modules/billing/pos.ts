@@ -1,3 +1,5 @@
+import { Prisma } from "@prisma/client";
+import { availableFefoQty } from "@/modules/inventory";
 import { BusinessError, buddhistYearPeriod } from "@/modules/shared";
 import { formatDocumentNumber, nextDocumentNumber } from "@/modules/tax";
 import type { AppContext } from "@/server/context";
@@ -27,6 +29,15 @@ export async function addPosLine(
     if (!product) throw new BusinessError("ไม่พบสินค้า");
     if (product.requiresPrescription) {
       throw new BusinessError("สินค้านี้ต้องมีใบสั่งยา — จ่ายผ่านห้องยา");
+    }
+    const qty = new Prisma.Decimal(input.qty);
+    const available = await availableFefoQty(tx, {
+      tenantId: ctx.tenantId,
+      branchId: ctx.branchId!,
+      productId: product.id,
+    });
+    if (available.lt(qty)) {
+      throw new BusinessError("สินค้านี้หมดสต็อก หรือจำนวนคงเหลือไม่พอ — รับของเข้าที่คลังก่อน");
     }
 
     let saleId = input.posSaleId ?? null;

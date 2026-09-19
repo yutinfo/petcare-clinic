@@ -1,6 +1,31 @@
 import { Prisma, type StockMovementType } from "@prisma/client";
 import { bangkokBusinessDate, BusinessError } from "@/modules/shared";
 
+function sellableOnHandWhere(input: { tenantId: string; branchId: string; productId: string }): Prisma.StockOnHandWhereInput {
+  const todayStart = new Date(`${bangkokBusinessDate()}T00:00:00+07:00`);
+  return {
+    tenantId: input.tenantId,
+    branchId: input.branchId,
+    productId: input.productId,
+    qtyBase: { gt: 0 },
+    lot: {
+      isQuarantined: false,
+      OR: [{ expiryDate: null }, { expiryDate: { gte: todayStart } }],
+    },
+  };
+}
+
+export async function availableFefoQty(
+  tx: Prisma.TransactionClient,
+  input: { tenantId: string; branchId: string; productId: string },
+) {
+  const rows = await tx.stockOnHand.findMany({
+    where: sellableOnHandWhere(input),
+    select: { qtyBase: true },
+  });
+  return rows.reduce((sum, row) => sum.plus(row.qtyBase), new Prisma.Decimal(0));
+}
+
 export async function consumeFefo(
   tx: Prisma.TransactionClient,
   input: {
@@ -17,18 +42,8 @@ export async function consumeFefo(
 ) {
   if (input.qtyBase.lte(0)) throw new BusinessError("จำนวนตัดสต็อกต้องมากกว่าศูนย์");
 
-  const todayStart = new Date(`${bangkokBusinessDate()}T00:00:00+07:00`);
   const lots = await tx.stockOnHand.findMany({
-    where: {
-      tenantId: input.tenantId,
-      branchId: input.branchId,
-      productId: input.productId,
-      qtyBase: { gt: 0 },
-      lot: {
-        isQuarantined: false,
-        OR: [{ expiryDate: null }, { expiryDate: { gte: todayStart } }],
-      },
-    },
+    where: sellableOnHandWhere(input),
     include: { lot: true },
     orderBy: [{ lot: { expiryDate: "asc" } }, { lot: { receivedAt: "asc" } }],
   });

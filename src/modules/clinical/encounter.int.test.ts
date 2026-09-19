@@ -38,6 +38,10 @@ describe("สิทธิ์ห้องตรวจ", () => {
     const workspace = await getEncounterWorkspace(receptionist, checked.encounterId);
     expect(workspace.soapNotes).toEqual([]);
     expect(workspace.priorSoap).toEqual([]);
+    expect(workspace.can.clinicalRead).toBe(false);
+    expect(workspace.can.clinicalWrite).toBe(false);
+    expect(workspace.can.clinicalSign).toBe(false);
+    expect(workspace.can.pharmacyPrescribe).toBe(false);
     expect(workspace.pet.name).toBe("โบ้");
   });
 

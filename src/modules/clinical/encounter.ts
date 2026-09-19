@@ -27,8 +27,14 @@ export async function getEncounterWorkspace(ctx: AppContext, encounterId: string
     });
     if (!enc) throw new BusinessError("ไม่พบเคส");
     ctx.can("patient:read", { branchId: enc.branchId });
-    const clinical =
-      ctx.actor.kind === "system" || ctx.actor.permissions.has("clinical:read");
+    const isSystem = ctx.actor.kind === "system";
+    const clinical = isSystem || ctx.actor.permissions.has("clinical:read");
+    const can = {
+      clinicalRead: clinical,
+      clinicalWrite: isSystem || ctx.actor.permissions.has("clinical:write"),
+      clinicalSign: isSystem || ctx.actor.permissions.has("clinical:sign"),
+      pharmacyPrescribe: isSystem || ctx.actor.permissions.has("pharmacy:prescribe"),
+    };
 
     const prior = clinical
       ? await tx.soapNote.findMany({
@@ -161,6 +167,7 @@ export async function getEncounterWorkspace(ctx: AppContext, encounterId: string
           priceSatang: s.priceSatang,
         })),
       },
+      can,
     };
   });
 }

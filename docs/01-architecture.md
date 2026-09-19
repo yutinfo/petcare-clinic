@@ -253,7 +253,7 @@ API
 | `settings/catalog/services` | ADM-06 | `settings/suppliers` | ADM-14 |
 | `settings/catalog/products` | ADM-07 | `settings/import` | ADM-15 |
 | `settings/catalog/tax-review` | ADM-08 | `settings/audit` · `settings/pdpa` | ADM-16 · ADM-17 |
-| `settings/translations` | ADM-18 (docs/13) | | |
+| `settings/translations` | ADM-18 (docs/13) | `settings` | ADM-00 หน้าแรกคอนโซล (docs/12 §11.5) |
 
 ### โครงของ use-case หนึ่งตัว
 
