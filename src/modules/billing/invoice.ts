@@ -171,6 +171,14 @@ export async function issueInvoiceFromCharges(ctx: AppContext, input: IssueInvoi
       if (payAmount > totals.grandTotalSatang) {
         throw new BusinessError("ยอดชำระเกินยอดบิล");
       }
+      const openShift = ctx.actor.membershipId
+        ? await tx.cashierShift.findFirst({
+            where: { branchId: branch.id, cashierId: ctx.actor.membershipId, status: "OPEN" },
+          })
+        : null;
+      if (input.method === "CASH" && !openShift) {
+        throw new BusinessError("เปิดกะเงินสดก่อนรับเงินสด");
+      }
       await tx.payment.create({
         data: {
           tenantId: ctx.tenantId,
@@ -181,6 +189,7 @@ export async function issueInvoiceFromCharges(ctx: AppContext, input: IssueInvoi
           amountSatang: payAmount,
           receivedById: ctx.actor.membershipId ?? ctx.actor.userId,
           reference: input.reference ?? null,
+          shiftId: openShift?.id ?? null,
         },
       });
       paidSatang = payAmount;

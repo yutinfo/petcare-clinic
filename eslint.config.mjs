@@ -16,6 +16,8 @@ const eslintConfig = [
       "coverage/**",
       "playwright-report/**",
       "test-results/**",
+      "e2e/**",
+      "playwright.config.ts",
     ],
   },
   ...compat.extends("next/core-web-vitals", "next/typescript"),

@@ -1,7 +1,7 @@
 import { redirect } from "next/navigation";
 import { PageHeader } from "@/components/staff/ui";
 import { ForbiddenScreen } from "@/components/staff/forbidden";
-import { getInvoice, listOpenCharges, listRecentInvoices } from "@/modules/billing";
+import { findOpenCashierShift, getInvoice, listOpenCharges, listRecentInvoices } from "@/modules/billing";
 import { searchProducts } from "@/modules/inventory";
 import { ForbiddenError, UnauthenticatedError } from "@/modules/shared";
 import { getStaffContext } from "@/server/staff-context";
@@ -23,10 +23,11 @@ export default async function PosPage({
       const invoice = await getInvoice(ctx, invoiceId);
       return <ReceiptCard branch={branch} invoice={invoice} />;
     }
-    const [products, openCharges, recent] = await Promise.all([
+    const [products, openCharges, recent, shift] = await Promise.all([
       searchProducts(ctx, ""),
       listOpenCharges(ctx),
       listRecentInvoices(ctx),
+      findOpenCashierShift(ctx).catch(() => null),
     ]);
     return (
       <div className="space-y-5">
@@ -35,7 +36,13 @@ export default async function PosPage({
           title="คิดเงินใบเดียวจบ"
           description="รายการค้างจากห้องตรวจ ยา ฝากเลี้ยง รวมกับของหน้าร้านได้ในบิลเดียวกัน"
         />
-        <PosDesk branch={branch} products={products} openCharges={openCharges} recent={recent} />
+        <PosDesk
+          branch={branch}
+          products={products}
+          openCharges={openCharges}
+          recent={recent}
+          cashShiftOpen={Boolean(shift)}
+        />
       </div>
     );
   } catch (err) {

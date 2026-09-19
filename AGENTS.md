@@ -124,6 +124,7 @@ npm run typecheck
 npm run lint
 npm test                     # unit (ไม่ต้องมี Docker)
 npm run test:int             # integration + RLS กับ Postgres จริง (testcontainers)
+npm run test:e2e             # Playwright walk-in (ต้องมี Docker + seed + dev server)
 npm run build
 npm run db:check-rls         # v_rls_coverage_gaps ต้องว่าง
 npm run dev                  # http://localhost:3000 — nune@demo.local / demo1234
@@ -140,8 +141,8 @@ npm run dev                  # http://localhost:3000 — nune@demo.local / demo1
 | `typecheck` | `tsc --noEmit` | ✅ |
 | `lint` | ESLint (รวม rule ห้าม modules import next/*) | ✅ |
 | `test` | Vitest unit | ✅ |
-| `test:int` | integration ที่ใช้ testcontainers (เทส RLS อยู่ในชุดนี้) | ✅ |
-| `test:e2e` | Playwright | ❌ ยังไม่ติดตั้ง Playwright — เทส e2e เส้นทาง walk-in ยังไม่มี |
+| `test:int` | integration ที่ใช้ testcontainers (เทส RLS อยู่ในชุดนี้) | ✅ 27 เคส |
+| `test:e2e` | Playwright | ✅ เส้น walk-in ลูกค้าใหม่ผ่าน Chromium (ต้อง `npx playwright install chromium` ครั้งแรก) |
 | `db:migrate` | `prisma migrate dev` | ใช้ `migrate deploy` แล้วผ่าน |
 | `db:push:manual` | รัน `prisma/sql/*.sql` ถ้ามี | โฟลเดอร์ยังว่าง — RLS ย้ายไปเป็น migration แล้ว |
 | `db:seed` | seed ข้อมูลอ้างอิง (species, breed, permission, role) | ✅ (ใช้ `MIGRATE_DATABASE_URL` เพราะ role ระบบมี `tenant_id` เป็น NULL) |

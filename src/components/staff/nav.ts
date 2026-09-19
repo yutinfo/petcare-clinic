@@ -7,6 +7,7 @@ export const STAFF_NAV = [
   { href: "pharmacy", label: "ห้องยา", hint: "จ่ายยา FEFO", tone: "rose", icon: "pharmacy" },
   { href: "inventory", label: "คลัง", hint: "สต็อกและรับเข้า", tone: "sun", icon: "inventory" },
   { href: "pos", label: "ขายหน้าร้าน", hint: "คิดเงินออกบิล", tone: "teal", icon: "pos" },
+  { href: "billing", label: "กะเงินสด", hint: "เปิดกะและปิดกะ", tone: "sun", icon: "billing" },
   { href: "boarding", label: "ฝากเลี้ยง", hint: "ผังกรง", tone: "sky", icon: "boarding" },
   { href: "grooming", label: "อาบน้ำตัดขน", hint: "คิวช่าง", tone: "rose", icon: "grooming" },
 ] as const;

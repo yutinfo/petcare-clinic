@@ -1,6 +1,7 @@
 import { beforeAll, describe, expect, it } from "vitest";
 import { checkInPet } from "@/modules/clinical";
 import { issueInvoiceFromCharges, tryMutateIssuedInvoice } from "./invoice";
+import { openCashierShift } from "./shift";
 import { getPgHarness, type PgHarness } from "@/test/pg-harness";
 import { seedMiniClinic, staffContext } from "@/test/clinic-fixture";
 
@@ -14,6 +15,7 @@ describe("ออกบิล", () => {
   it("จองเลขตอนออกบิล คำนวณ VAT ระดับบิล และห้ามแก้ยอดหลังออก", async () => {
     const f = await seedMiniClinic(h.migrator);
     const ctx = staffContext(h.app, f);
+    await openCashierShift(ctx, { openingFloatSatang: 0 });
     const checked = await checkInPet(ctx, { petId: f.pet.id, weightKg: "4" });
     const charges = await h.migrator.chargeItem.findMany({ where: { encounterId: checked.encounterId } });
     expect(charges.length).toBeGreaterThan(0);
@@ -43,6 +45,7 @@ describe("ออกบิล", () => {
   it("ออกบิลชุดเดียวกันพร้อมกันได้ครั้งเดียว", async () => {
     const f = await seedMiniClinic(h.migrator);
     const ctx = staffContext(h.app, f);
+    await openCashierShift(ctx, { openingFloatSatang: 0 });
     const checked = await checkInPet(ctx, { petId: f.pet.id, weightKg: "4" });
     const charges = await h.migrator.chargeItem.findMany({ where: { encounterId: checked.encounterId } });
     const chargeIds = charges.map((c) => c.id);

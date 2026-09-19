@@ -35,11 +35,13 @@ export function PosDesk({
   products,
   openCharges,
   recent,
+  cashShiftOpen,
 }: {
   branch: string;
   products: Product[];
   openCharges: ChargeView[];
   recent: Recent[];
+  cashShiftOpen: boolean;
 }) {
   const router = useRouter();
   const [ownerId, setOwnerId] = useState<string | null>(openCharges[0]?.ownerId ?? null);
@@ -73,6 +75,14 @@ export function PosDesk({
   return (
     <div className="grid gap-5 lg:grid-cols-[minmax(0,1fr)_22rem]">
       <section className="space-y-4">
+        {!cashShiftOpen ? (
+          <Notice tone="warn">
+            ยังไม่เปิดกะเงินสด — รับเงินสดไม่ได้จนกว่าจะ{" "}
+            <Link href={`/${branch}/billing`} className="underline">
+              เปิดกะ
+            </Link>
+          </Notice>
+        ) : null}
         <div className="clinic-card space-y-3 p-4">
           <p className="text-sm font-medium">เลือกลูกค้าก่อนคิดเงิน</p>
           <OwnerPetPicker
@@ -176,7 +186,7 @@ export function PosDesk({
               <Button
                 key={m}
                 variant={m === "CASH" ? "default" : "outline"}
-                disabled={!ownerId || total === 0 || pending}
+                disabled={!ownerId || total === 0 || pending || (m === "CASH" && !cashShiftOpen)}
                 onClick={() =>
                   start(async () => {
                     if (!ownerId) return;

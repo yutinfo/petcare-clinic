@@ -6,6 +6,7 @@ import { useEffect, useState } from "react";
 import {
   Banknote,
   CalendarDays,
+  ClipboardList,
   LayoutGrid,
   Menu,
   Package,
@@ -30,6 +31,7 @@ const ICONS = {
   pharmacy: Pill,
   inventory: Package,
   pos: Banknote,
+  billing: ClipboardList,
   boarding: Warehouse,
   grooming: Scissors,
 } as const;
