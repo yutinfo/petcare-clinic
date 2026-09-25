@@ -1,4 +1,5 @@
 import { redirect } from "next/navigation";
+import { getTranslations } from "next-intl/server";
 import { StaffShell } from "@/components/staff/staff-shell";
 import { auth, signOut } from "@/server/auth/config";
 
@@ -14,14 +15,15 @@ export default async function StaffLayout({
   if (!session?.user || session.user.kind !== "staff") {
     redirect("/login");
   }
+  const t = await getTranslations("common");
   const branchName =
     session.user.branches.find((b) => b.code.toLowerCase() === branch.toLowerCase())?.name ??
-    "สาขา";
+    t("branchFallback");
 
   return (
     <StaffShell
       branch={branch}
-      tenantName={session.user.tenantName ?? "คลินิก"}
+      tenantName={session.user.tenantName ?? t("clinicFallback")}
       branchName={branchName}
       displayName={session.user.displayName}
       signOut={
@@ -35,7 +37,7 @@ export default async function StaffLayout({
             className="text-sm text-stone-500 underline-offset-2 hover:text-ink hover:underline"
             type="submit"
           >
-            ออกจากระบบ
+            {t("signOut")}
           </button>
         </form>
       }

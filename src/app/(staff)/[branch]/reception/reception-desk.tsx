@@ -2,7 +2,7 @@
 
 import Link from "next/link";
 import { useEffect, useMemo, useRef, useState, useTransition } from "react";
-import { ENCOUNTER_STATUS, ENCOUNTER_TYPE } from "@/components/staff/labels";
+import { useTranslations } from "next-intl";
 import { WaitMinutes } from "@/components/staff/live";
 import { AlertChip, EmptyState, Field, Notice, PageHeader, StatusBadge } from "@/components/staff/ui";
 import { Button } from "@/components/ui/button";
@@ -40,6 +40,8 @@ export function ReceptionDesk({
   const [message, setMessage] = useState<string | null>(null);
   const [creating, setCreating] = useState(false);
   const [selected, setSelected] = useState<{ owner: OwnerSearchHit; pet: PetSearchHit } | null>(null);
+  const t = useTranslations("reception");
+  const status = useTranslations("enum.EncounterStatus");
   const [pending, start] = useTransition();
   const searchBox = useRef<HTMLInputElement>(null);
 
@@ -68,11 +70,7 @@ export function ReceptionDesk({
   return (
     <div className="grid gap-5 lg:grid-cols-[minmax(0,1fr)_20rem]">
       <section className="space-y-4">
-        <PageHeader
-          eyebrow="เคาน์เตอร์รับสัตว์"
-          title="ค้นหาแล้วเปิดเคส"
-          description="พิมพ์เบอร์โทร ชื่อเจ้าของ ชื่อสัตว์ หรือรหัส — เลือกตัวสัตว์ ชั่งน้ำหนัก แล้วเปิดเคส"
-        />
+        <PageHeader eyebrow={t("eyebrow")} title={t("title")} description={t("description")} />
         {selected ? (
           <>
             {message ? <Notice>{message}</Notice> : null}
@@ -94,14 +92,14 @@ export function ReceptionDesk({
           ref={searchBox}
           value={query}
           onChange={(e) => setQuery(e.target.value)}
-          placeholder="เช่น 0812345678 หรือ ข้าวปุ้น"
+          placeholder={t("searchPlaceholder")}
           className="h-14 text-lg"
-          aria-label="ค้นหาเจ้าของหรือสัตว์"
+          aria-label={t("searchLabel")}
         />
         {message ? <Notice tone={hits.length === 0 ? "warn" : "error"}>{message}</Notice> : null}
 
         {query.trim().length < 2 ? (
-          <EmptyState title="เริ่มจากช่องค้นหาด้านบน" hint="พิมพ์อย่างน้อย 2 ตัวอักษร หรือสร้างลูกค้าใหม่ถ้ามาครั้งแรก" />
+          <EmptyState title={t("startTitle")} hint={t("startHint")} />
         ) : null}
 
         <div className="space-y-3">
@@ -114,10 +112,10 @@ export function ReceptionDesk({
                   </Link>{" "}
                   <span className="font-normal text-stone-400">{owner.code}</span>
                 </h2>
-                <p className="text-sm text-stone-500">{owner.phone ?? "ไม่มีเบอร์"}</p>
+                <p className="text-sm text-stone-500">{owner.phone ?? t("noPhone")}</p>
               </div>
               {owner.pets.length === 0 ? (
-                <p className="mt-3 text-sm text-stone-400">ยังไม่มีสัตว์ในทะเบียน — สร้างลูกค้าใหม่ไม่ได้ ต้องเพิ่มสัตว์</p>
+                <p className="mt-3 text-sm text-stone-500">{t("noPets")}</p>
               ) : (
                 <ul className="mt-3 grid gap-2 sm:grid-cols-2">
                   {owner.pets.map((pet) => {
@@ -155,11 +153,11 @@ export function ReceptionDesk({
         <div className="clinic-card border-dashed p-4">
           <div className="flex items-center justify-between gap-2">
             <div>
-              <h2 className="font-semibold">ลูกค้าใหม่</h2>
-              <p className="text-sm text-stone-500">กรอก 4 ช่อง แล้วไปชั่งน้ำหนักต่อ</p>
+              <h2 className="font-semibold">{t("newCustomer")}</h2>
+              <p className="text-sm text-stone-500">{t("newCustomerHint")}</p>
             </div>
             <Button type="button" variant="outline" onClick={() => setCreating((v) => !v)}>
-              {creating ? "ปิดฟอร์ม" : "สร้างลูกค้าใหม่"}
+              {creating ? t("closeForm") : t("createCustomer")}
             </Button>
           </div>
           {creating ? (
@@ -183,9 +181,9 @@ export function ReceptionDesk({
       </section>
 
       <aside className="space-y-3">
-        <h2 className="font-semibold">คิววันนี้</h2>
+        <h2 className="font-semibold">{t("queueTitle")}</h2>
         {initialWaiting.length === 0 ? (
-          <EmptyState title="ยังไม่มีเคสรอตรวจ" hint="เมื่อเปิดเคส จะโชว์ที่นี่และบนกระดานคิว" />
+          <EmptyState title={t("emptyQueue")} hint={t("emptyQueueHint")} />
         ) : (
           <ul className="space-y-2">
             {initialWaiting.map((enc) => (
@@ -193,7 +191,17 @@ export function ReceptionDesk({
                   <Link href={`/${branch}/encounters/${enc.id}`} className="clinic-card block p-3">
                     <div className="flex items-center justify-between gap-2">
                       <p className="text-xs text-stone-400">{enc.number}</p>
-                      <StatusBadge value={enc.status} map={ENCOUNTER_STATUS} />
+                      <StatusBadge
+                        value={enc.status}
+                        map={{
+                          WAITING: status("WAITING"),
+                          IN_PROGRESS: status("IN_PROGRESS"),
+                          PENDING_RESULT: status("PENDING_RESULT"),
+                          READY_TO_BILL: status("READY_TO_BILL"),
+                          CLOSED: status("CLOSED"),
+                          CANCELLED: status("CANCELLED"),
+                        }}
+                      />
                     </div>
                     <p className="mt-1 font-medium">
                       {enc.petName} · {enc.ownerName}
@@ -227,6 +235,7 @@ function NewCustomerForm({
   onError: (msg: string) => void;
   start: (fn: () => Promise<void>) => void;
 }) {
+  const t = useTranslations("reception");
   const defaultSpecies = species[0]?.id ?? "";
   return (
     <form
@@ -257,16 +266,16 @@ function NewCustomerForm({
         });
       }}
     >
-      <Field label="ชื่อเจ้าของ">
+      <Field label={t("ownerName")}>
         <Input name="ownerFirstName" required autoComplete="name" />
       </Field>
-      <Field label="เบอร์โทร">
+      <Field label={t("phone")}>
         <Input name="phone" inputMode="tel" required autoComplete="tel" />
       </Field>
-      <Field label="ชื่อสัตว์">
+      <Field label={t("petName")}>
         <Input name="petName" required />
       </Field>
-      <Field label="ชนิดสัตว์">
+      <Field label={t("species")}>
         <Select name="speciesId" defaultValue={defaultSpecies}>
           {species.map((s) => (
             <option key={s.id} value={s.id}>
@@ -277,7 +286,7 @@ function NewCustomerForm({
       </Field>
       <div className="sm:col-span-2">
         <Button type="submit" className="h-12 w-full" disabled={pending}>
-          บันทึกลูกค้าแล้วไปชั่งน้ำหนัก
+          {pending ? t("saving") : t("saveAndWeigh")}
         </Button>
       </div>
     </form>
@@ -299,6 +308,8 @@ function CheckInPanel({
   onError: (msg: string) => void;
   onCancel: () => void;
 }) {
+  const t = useTranslations("reception");
+  const types = useTranslations("enum.EncounterType");
   const highAlerts = useMemo(
     () => selected.pet.alerts.filter((a) => a.severity === "HIGH" || a.type === "ALLERGY"),
     [selected.pet.alerts],
@@ -323,7 +334,7 @@ function CheckInPanel({
     >
       <div className="flex items-start justify-between gap-2">
         <div>
-          <p className="text-sm text-stone-500">สัตว์ที่เลือก</p>
+          <p className="text-sm text-stone-500">{t("selected")}</p>
           <h2 className="text-xl font-semibold">
             {selected.pet.name} · {selected.owner.displayName}
           </h2>
@@ -332,38 +343,36 @@ function CheckInPanel({
           </p>
         </div>
         <Button type="button" variant="outline" onClick={onCancel}>
-          เปลี่ยนสัตว์
+          {t("changePet")}
         </Button>
       </div>
       <AlertChip labels={highAlerts.map((a) => a.label)} />
       <div className="grid gap-3 sm:grid-cols-2">
-        <Field label="น้ำหนัก (กก.)" hint="ใช้คำนวณขนาดยาในห้องตรวจ">
+        <Field label={t("weight")} hint={t("weightHint")}>
           <Input
             name="weightKg"
             inputMode="decimal"
             required
             defaultValue={selected.pet.currentWeightKg ?? ""}
-            placeholder="เช่น 5.2"
+            placeholder={t("weightPlaceholder")}
             autoFocus
           />
         </Field>
-        <Field label="ประเภทเคส">
+        <Field label={t("caseType")}>
           <Select name="type" defaultValue="OPD">
-            {Object.entries(ENCOUNTER_TYPE)
-              .filter(([k]) => ["OPD", "VACCINE", "RECHECK", "EMERGENCY"].includes(k))
-              .map(([k, v]) => (
-                <option key={k} value={k}>
-                  {v}
-                </option>
-              ))}
+            {(["OPD", "VACCINE", "RECHECK", "EMERGENCY"] as const).map((k) => (
+              <option key={k} value={k}>
+                {types(k)}
+              </option>
+            ))}
           </Select>
         </Field>
       </div>
-      <Field label="อาการเบื้องต้น">
-        <Input name="chiefComplaint" placeholder="เช่น อาเจียน 1 วัน" />
+      <Field label={t("complaint")}>
+        <Input name="chiefComplaint" placeholder={t("complaintPlaceholder")} />
       </Field>
       <Button type="submit" className="h-12 w-full" variant="coral" disabled={pending}>
-        {pending ? "กำลังเปิดเคส…" : "เปิดเคส"}
+        {pending ? t("opening") : t("openCase")}
       </Button>
     </form>
   );

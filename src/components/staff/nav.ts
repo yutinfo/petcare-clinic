@@ -1,15 +1,15 @@
 export const STAFF_NAV = [
-  { href: "", label: "หน้าหลัก", hint: "ภาพรวมวันนี้", tone: "sun", icon: "home" },
-  { href: "reception", label: "รับสัตว์", hint: "เปิดเคส walk-in", tone: "coral", icon: "reception" },
-  { href: "queue", label: "กระดานคิว", hint: "สถานะห้องตรวจ", tone: "teal", icon: "queue" },
-  { href: "appointments", label: "นัดหมาย", hint: "ปฏิทินวันนี้", tone: "lavender", icon: "appointments" },
-  { href: "clients", label: "ลูกค้า", hint: "ทะเบียนเจ้าของ", tone: "mint", icon: "clients" },
-  { href: "pharmacy", label: "ห้องยา", hint: "จ่ายยา FEFO", tone: "rose", icon: "pharmacy" },
-  { href: "inventory", label: "คลัง", hint: "สต็อกและรับเข้า", tone: "sun", icon: "inventory" },
-  { href: "pos", label: "ขายหน้าร้าน", hint: "คิดเงินออกบิล", tone: "teal", icon: "pos" },
-  { href: "billing", label: "การเงิน", hint: "กะเงินสดและใบลดหนี้", tone: "sun", icon: "billing" },
-  { href: "boarding", label: "ฝากเลี้ยง", hint: "ผังกรง", tone: "sky", icon: "boarding" },
-  { href: "grooming", label: "อาบน้ำตัดขน", hint: "คิวช่าง", tone: "rose", icon: "grooming" },
+  { href: "", key: "home", tone: "sun", icon: "home" },
+  { href: "reception", key: "reception", tone: "coral", icon: "reception" },
+  { href: "queue", key: "queue", tone: "teal", icon: "queue" },
+  { href: "appointments", key: "appointments", tone: "lavender", icon: "appointments" },
+  { href: "clients", key: "clients", tone: "mint", icon: "clients" },
+  { href: "pharmacy", key: "pharmacy", tone: "rose", icon: "pharmacy" },
+  { href: "inventory", key: "inventory", tone: "sun", icon: "inventory" },
+  { href: "pos", key: "pos", tone: "teal", icon: "pos" },
+  { href: "billing", key: "billing", tone: "sun", icon: "billing" },
+  { href: "boarding", key: "boarding", tone: "sky", icon: "boarding" },
+  { href: "grooming", key: "grooming", tone: "rose", icon: "grooming" },
 ] as const;
 
 /** พื้นการ์ดของแผนก — โทนเดียวกับไอคอนในเมนู และคนละความหมายกับสีสถานะคิว */
