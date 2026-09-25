@@ -1,17 +1,18 @@
 "use client";
 
 import Link from "next/link";
+import { DocLabel } from "@/components/staff/doc-label";
 import { formatSatangTh } from "@/modules/shared/money";
 import { formatThaiDateTime } from "@/modules/shared/date";
 import { Button } from "@/components/ui/button";
 import type { getInvoice } from "@/modules/billing";
 
-const DOC_LABEL: Record<string, string> = {
-  FULL_TAX_INVOICE: "ใบกำกับภาษี / ใบเสร็จรับเงิน",
-  ABBREVIATED_TAX_INVOICE: "ใบเสร็จรับเงิน/ใบกำกับภาษีอย่างย่อ",
-  RECEIPT: "ใบเสร็จรับเงิน",
-  PROFORMA: "ใบแจ้งหนี้",
-};
+const DOC_LABEL = {
+  FULL_TAX_INVOICE: "fullTax",
+  ABBREVIATED_TAX_INVOICE: "abbreviated",
+  RECEIPT: "receipt",
+  PROFORMA: "proforma",
+} as const;
 
 export function ReceiptCard({
   branch,
@@ -37,27 +38,53 @@ export function ReceiptCard({
         </div>
       </div>
       <article className="clinic-card mx-auto max-w-xl p-8">
-        <p className="text-center text-xs font-medium uppercase tracking-wide text-teal">ต้นฉบับ</p>
-        <h1 className="mt-1 text-center text-2xl font-semibold">{DOC_LABEL[invoice.docType] ?? invoice.docType}</h1>
-        <p className="mt-1 text-center text-sm text-stone-500">เลขที่ {invoice.number}</p>
+        <p className="text-center text-xs font-medium uppercase tracking-wide text-teal">
+          <DocLabel name="original" />
+        </p>
+        <h1 className="mt-1 text-center text-2xl font-semibold">
+          {DOC_LABEL[invoice.docType as keyof typeof DOC_LABEL] ? (
+            <DocLabel name={DOC_LABEL[invoice.docType as keyof typeof DOC_LABEL]} />
+          ) : (
+            invoice.docType
+          )}
+        </h1>
+        <p className="mt-1 text-center text-sm text-stone-500">
+          <DocLabel name="number" /> {invoice.number}
+        </p>
         <div className="mt-6 grid gap-1 text-sm">
           <p>
-            <span className="text-stone-400">ผู้ขาย</span> {invoice.sellerName}
+            <DocLabel name="seller" /> {invoice.sellerName}
           </p>
           <p>{invoice.sellerAddress}</p>
-          {invoice.sellerTaxId ? <p>เลขประจำตัวผู้เสียภาษี {invoice.sellerTaxId} สำนักงานใหญ่</p> : null}
+          {invoice.sellerTaxId ? (
+            <p>
+              <DocLabel name="taxId" /> {invoice.sellerTaxId} <DocLabel name="headOffice" />
+            </p>
+          ) : null}
           <p className="mt-3">
-            <span className="text-stone-400">ผู้ซื้อ</span> {invoice.buyerName}
+            <DocLabel name="buyer" /> {invoice.buyerName}
           </p>
-          {invoice.buyerTaxId ? <p>เลขประจำตัวผู้เสียภาษี {invoice.buyerTaxId}</p> : null}
-          <p>วันที่ {invoice.issuedAt ? formatThaiDateTime(new Date(invoice.issuedAt)) : ""}</p>
+          {invoice.buyerTaxId ? (
+            <p>
+              <DocLabel name="taxId" /> {invoice.buyerTaxId}
+            </p>
+          ) : null}
+          <p>
+            <DocLabel name="date" /> {invoice.issuedAt ? formatThaiDateTime(new Date(invoice.issuedAt)) : ""}
+          </p>
         </div>
         <table className="mt-6 w-full text-sm">
           <thead>
-            <tr className="border-b text-left text-stone-400">
-              <th className="py-2">รายการ</th>
-              <th>สัตว์</th>
-              <th className="text-right">รวม</th>
+            <tr className="border-b text-left text-stone-500">
+              <th className="py-2">
+                <DocLabel name="item" />
+              </th>
+              <th>
+                <DocLabel name="pet" />
+              </th>
+              <th className="text-right">
+                <DocLabel name="total" />
+              </th>
             </tr>
           </thead>
           <tbody>
@@ -77,23 +104,31 @@ export function ReceiptCard({
         </table>
         <dl className="mt-4 space-y-1 text-sm">
           <div className="flex justify-between">
-            <dt>มูลค่าสินค้า/บริการ</dt>
+            <dt>
+              <DocLabel name="base" />
+            </dt>
             <dd className="tabular-nums">{formatSatangTh(invoice.vatBaseSatang || invoice.subtotalSatang)}</dd>
           </div>
           {invoice.vatSatang > 0 ? (
             <div className="flex justify-between">
-              <dt>ภาษีมูลค่าเพิ่ม 7%</dt>
+              <dt>
+                <DocLabel name="vat" />
+              </dt>
               <dd className="tabular-nums">{formatSatangTh(invoice.vatSatang)}</dd>
             </div>
           ) : null}
           <div className="flex justify-between text-lg font-semibold">
-            <dt>รวมทั้งสิ้น</dt>
+            <dt>
+              <DocLabel name="grand" />
+            </dt>
             <dd className="tabular-nums">{formatSatangTh(invoice.grandTotalSatang)}</dd>
           </div>
           <p className="text-stone-500">({invoice.bahtText})</p>
         </dl>
         {invoice.priceIncludesVat && invoice.vatSatang > 0 ? (
-          <p className="mt-3 text-xs text-stone-400">ราคาสินค้ารวมภาษีมูลค่าเพิ่มแล้ว</p>
+          <p className="mt-3 text-xs text-stone-500">
+            <DocLabel name="includesVat" />
+          </p>
         ) : null}
         <p className="mt-4 text-xs text-amber-700">
           การจัดประเภท VAT ของแต่ละรายการตั้งได้ที่แค็ตตาล็อก — รอผู้ทำบัญชียืนยันก่อนใช้งานจริง

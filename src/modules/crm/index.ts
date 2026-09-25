@@ -7,3 +7,4 @@ export {
 } from "./search-clients";
 export { getOwnerProfile, getPetProfile } from "./clients";
 export { listPortalHome, requestPortalBooking } from "./portal";
+export { importCatalogTranslations, type CatalogTranslationInput } from "./catalog-translation";

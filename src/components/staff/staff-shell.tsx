@@ -3,6 +3,8 @@
 import Link from "next/link";
 import { usePathname } from "next/navigation";
 import { useEffect, useState } from "react";
+import { useLocale, useTranslations } from "next-intl";
+import { LocaleSwitch } from "./locale-switch";
 import {
   Banknote,
   CalendarDays,
@@ -54,13 +56,16 @@ export function StaffShell({
   children: React.ReactNode;
 }) {
   const pathname = usePathname();
+  const locale = useLocale();
+  const t = useTranslations("common");
+  const nav = useTranslations("nav");
   const [open, setOpen] = useState(false);
   const [clock, setClock] = useState("");
 
   useEffect(() => {
     const tick = () =>
       setClock(
-        new Date().toLocaleTimeString("th-TH", {
+        new Date().toLocaleTimeString(locale === "en" ? "en-GB" : "th-TH", {
           hour: "2-digit",
           minute: "2-digit",
           timeZone: "Asia/Bangkok",
@@ -69,7 +74,7 @@ export function StaffShell({
     tick();
     const id = setInterval(tick, 30_000);
     return () => clearInterval(id);
-  }, []);
+  }, [locale]);
 
   useEffect(() => {
     setOpen(false);
@@ -99,8 +104,8 @@ export function StaffShell({
             <NavLink
               key={item.href}
               href={hrefOf(item.href)}
-              label={item.label}
-              hint={item.hint}
+              label={nav(`${item.key}.label`)}
+              hint={nav(`${item.key}.hint`)}
               tone={item.tone}
               icon={item.icon}
               active={isActive(item.href)}
@@ -109,7 +114,7 @@ export function StaffShell({
         </nav>
         <div className="mt-3 rounded-2xl bg-cream px-3 py-3">
           <p className="text-sm font-medium text-ink">{displayName}</p>
-          <p className="text-sm text-stone-500">พนักงานคลินิก</p>
+          <p className="text-sm text-stone-500">{t("staff")}</p>
           <div className="mt-2">{signOut}</div>
         </div>
       </aside>
@@ -120,14 +125,17 @@ export function StaffShell({
             <ClinicMark />
           </Link>
           <p className="hidden text-sm text-stone-500 lg:block">
-            สวัสดีคุณ <span className="font-medium text-ink">{displayName}</span>
+            {t("helloName", { name: displayName })}
             <span className="mx-2 text-stone-300">·</span>
             <span className="tabular-nums">{clock}</span>
           </p>
           <p className="hidden text-sm text-stone-500 lg:block">
             {tenantName} · {branchName}
           </p>
-          <p className="text-sm tabular-nums text-stone-500 lg:hidden">{clock}</p>
+          <div className="flex items-center gap-3">
+            <LocaleSwitch />
+            <p className="text-sm tabular-nums text-stone-500 lg:hidden">{clock}</p>
+          </div>
         </div>
       </header>
 
@@ -150,7 +158,7 @@ export function StaffShell({
                   )}
                 >
                   <Icon className="h-5 w-5" strokeWidth={1.75} />
-                  {item.label}
+                  {nav(`${item.key}.label`)}
                 </Link>
               </li>
             );
@@ -162,7 +170,7 @@ export function StaffShell({
               className="flex min-h-12 w-full flex-col items-center justify-center rounded-2xl text-[11px] font-medium text-stone-500"
             >
               <Menu className="h-5 w-5" strokeWidth={1.75} />
-              เมนู
+              {t("menu")}
             </button>
           </li>
         </ul>
@@ -173,12 +181,12 @@ export function StaffShell({
           <button
             type="button"
             className="absolute inset-0 bg-ink/30"
-            aria-label="ปิดเมนู"
+            aria-label={t("closeMenu")}
             onClick={() => setOpen(false)}
           />
           <div className="absolute inset-x-0 bottom-0 max-h-[85vh] overflow-y-auto rounded-t-3xl bg-white p-4 pb-[max(1.5rem,env(safe-area-inset-bottom))]">
             <div className="mb-3 flex items-center justify-between">
-              <p className="font-semibold">ไปที่หน้า</p>
+              <p className="font-semibold">{t("goTo")}</p>
               <button type="button" onClick={() => setOpen(false)} className="rounded-full p-2 hover:bg-cream">
                 <X className="h-5 w-5" />
               </button>
@@ -188,8 +196,8 @@ export function StaffShell({
                 <NavLink
                   key={item.href}
                   href={hrefOf(item.href)}
-                  label={item.label}
-                  hint={item.hint}
+                  label={nav(`${item.key}.label`)}
+                  hint={nav(`${item.key}.hint`)}
                   tone={item.tone}
                   icon={item.icon}
                   active={isActive(item.href)}

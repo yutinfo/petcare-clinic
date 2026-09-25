@@ -1,10 +1,11 @@
 import Link from "next/link";
 import { redirect } from "next/navigation";
+import { getLocale, getTranslations } from "next-intl/server";
 import { ClinicMark } from "@/components/brand/logo";
-import { BOOKING_STATUS, BOOKING_TYPE, CARE_LOG, INVOICE_STATUS, labelOf } from "@/components/staff/labels";
+import { LocaleSwitch } from "@/components/staff/locale-switch";
 import { EmptyState, StatusBadge } from "@/components/staff/ui";
-import { formatSatangTh } from "@/modules/shared/money";
-import { formatThaiDateTime } from "@/modules/shared/date";
+import { formatSatang, formatWhen } from "@/lib/i18n/format";
+import { resolveLocale } from "@/lib/i18n/locale";
 import { listPortalHome } from "@/modules/crm";
 import { UnauthenticatedError } from "@/modules/shared";
 import { auth, signOut } from "@/server/auth/config";
@@ -19,10 +20,19 @@ export default async function PortalHomePage() {
   try {
     const ctx = await getOwnerContext();
     const home = await listPortalHome(ctx);
+    const t = await getTranslations("portal");
+    const bookingStatus = await getTranslations("enum.BookingStatus");
+    const bookingType = await getTranslations("enum.BookingType");
+    const care = await getTranslations("enum.CareLog");
+    const invoiceStatus = await getTranslations("enum.InvoiceStatus");
+    const locale = resolveLocale(await getLocale());
+    const when = (iso: string) => formatWhen(new Date(iso), locale);
     return (
       <main className="mx-auto min-h-screen max-w-3xl space-y-6 px-4 py-8">
-        <header className="flex items-center justify-between">
+        <header className="flex items-center justify-between gap-3">
           <ClinicMark />
+          <div className="flex items-center gap-3">
+            <LocaleSwitch />
           <form
             action={async () => {
               "use server";
@@ -30,26 +40,27 @@ export default async function PortalHomePage() {
             }}
           >
             <button className="text-sm text-stone-500 hover:underline" type="submit">
-              ออกจากระบบ
+              {t("signOut")}
             </button>
           </form>
+          </div>
         </header>
         <div>
-          <p className="text-sm font-medium text-coral">พอร์ทัลเจ้าของสัตว์</p>
-          <h1 className="text-3xl font-semibold">สวัสดีคุณ {home.ownerName}</h1>
-          <p className="mt-1 text-sm text-stone-500">ดูสัตว์ของฉัน จองคิว ติดตามฝากเลี้ยง และใบเสร็จ</p>
+          <p className="text-sm font-medium text-coral">{t("eyebrow")}</p>
+          <h1 className="text-3xl font-semibold">{home.ownerName ? t("hello", { name: home.ownerName }) : t("helloPlain")}</h1>
+          <p className="mt-1 text-sm text-stone-500">{t("lead")}</p>
         </div>
         <section className="grid gap-3 sm:grid-cols-2">
           {home.pets.length === 0 ? (
-            <EmptyState title="ยังไม่มีสัตว์ในทะเบียน" hint="แจ้งเคาน์เตอร์คลินิกให้ออกบัตรให้" />
+            <EmptyState title={t("noPets")} hint={t("noPetsHint")} />
           ) : (
             home.pets.map((p) => (
               <article key={p.id} className="clinic-card p-5">
                 <p className="text-xs text-stone-400">{p.speciesNameTh}</p>
                 <h2 className="text-xl font-semibold">{p.name}</h2>
-                <p className="text-sm text-stone-500">น้ำหนัก {p.currentWeightKg ?? "—"} กก.</p>
+                <p className="text-sm text-stone-500">{t("weight", { kg: p.currentWeightKg ?? "—" })}</p>
                 {p.nextVaccine ? (
-                  <p className="mt-2 text-sm text-teal">วัคซีนครั้งถัดไป {formatThaiDateTime(new Date(p.nextVaccine))}</p>
+                  <p className="mt-2 text-sm text-teal">{t("nextVaccine", { when: when(p.nextVaccine) })}</p>
                 ) : null}
               </article>
             ))
@@ -57,17 +68,17 @@ export default async function PortalHomePage() {
         </section>
         {home.stays.length > 0 ? (
           <section className="clinic-card p-5">
-            <h2 className="font-semibold">สัตว์ที่ฝากเลี้ยงอยู่</h2>
+            <h2 className="font-semibold">{t("staying")}</h2>
             {home.stays.map((s) => (
               <div key={s.id} className="mt-3">
                 <p>
-                  {s.petName} · กำหนดรับ {formatThaiDateTime(new Date(s.expectedOutAt))}
+                  {t("pickup", { pet: s.petName, when: when(s.expectedOutAt) })}
                 </p>
                 <ul className="mt-2 space-y-1 text-sm text-stone-500">
-                  {s.logs.length === 0 ? <li>ยังไม่มีบันทึกดูแลวันนี้</li> : null}
+                  {s.logs.length === 0 ? <li>{t("noCare")}</li> : null}
                   {s.logs.map((l) => (
                     <li key={l.occurredAt}>
-                      {formatThaiDateTime(new Date(l.occurredAt))} · {labelOf(CARE_LOG, l.type)}
+                      {when(l.occurredAt)} · {care(l.type as "FEED")}
                       {l.detail ? ` ${l.detail}` : ""}
                     </li>
                   ))}
@@ -78,19 +89,34 @@ export default async function PortalHomePage() {
         ) : null}
         <PortalBookingForm pets={home.pets} />
         <section className="clinic-card p-5">
-          <h2 className="font-semibold">นัดที่กำลังมา</h2>
+          <h2 className="font-semibold">{t("upcoming")}</h2>
           {home.bookings.length === 0 ? (
-            <p className="mt-3 text-sm text-stone-400">ยังไม่มีนัด — จองด้านบนได้เลย</p>
+            <p className="mt-3 text-sm text-stone-500">{t("noBookings")}</p>
           ) : (
             <ul className="mt-3 space-y-2 text-sm">
               {home.bookings.map((b) => (
                 <li key={b.id} className="flex flex-wrap items-center justify-between gap-2">
                   <span>
-                    {formatThaiDateTime(new Date(b.startAt))} · {b.petName}
+                    {when(b.startAt)} · {b.petName}
                   </span>
                   <span className="flex gap-2">
-                    <StatusBadge value={b.type} map={BOOKING_TYPE} />
-                    <StatusBadge value={b.status} map={BOOKING_STATUS} />
+                    <StatusBadge value={b.type} map={{
+                      CONSULT: bookingType("CONSULT"),
+                      VACCINE: bookingType("VACCINE"),
+                      GROOMING: bookingType("GROOMING"),
+                      FOLLOW_UP: bookingType("FOLLOW_UP"),
+                      BOARDING: bookingType("BOARDING"),
+                      SURGERY: bookingType("SURGERY"),
+                      OTHER: bookingType("OTHER"),
+                    }} />
+                    <StatusBadge value={b.status} map={{
+                      REQUESTED: bookingStatus("REQUESTED"),
+                      CONFIRMED: bookingStatus("CONFIRMED"),
+                      CHECKED_IN: bookingStatus("CHECKED_IN"),
+                      COMPLETED: bookingStatus("COMPLETED"),
+                      CANCELLED: bookingStatus("CANCELLED"),
+                      NO_SHOW: bookingStatus("NO_SHOW"),
+                    }} />
                   </span>
                 </li>
               ))}
@@ -98,25 +124,31 @@ export default async function PortalHomePage() {
           )}
         </section>
         <section className="clinic-card p-5">
-          <h2 className="font-semibold">ใบเสร็จ</h2>
+          <h2 className="font-semibold">{t("receipts")}</h2>
           {home.invoices.length === 0 ? (
-            <p className="mt-3 text-sm text-stone-400">ยังไม่มีใบเสร็จ</p>
+            <p className="mt-3 text-sm text-stone-500">{t("noReceipts")}</p>
           ) : (
             <ul className="mt-3 space-y-2 text-sm">
               {home.invoices.map((i) => (
                 <li key={i.id} className="flex items-center justify-between gap-2">
                   <span>
                     {i.number}
-                    <StatusBadge value={i.status} map={INVOICE_STATUS} className="ml-2" />
+                    <StatusBadge value={i.status} map={{
+                      DRAFT: invoiceStatus("DRAFT"),
+                      ISSUED: invoiceStatus("ISSUED"),
+                      PARTIALLY_PAID: invoiceStatus("PARTIALLY_PAID"),
+                      PAID: invoiceStatus("PAID"),
+                      VOID: invoiceStatus("VOID"),
+                    }} className="ml-2" />
                   </span>
-                  <span className="tabular-nums">{formatSatangTh(i.grandTotalSatang)} บาท</span>
+                  <span className="tabular-nums">{t("baht", { amount: formatSatang(i.grandTotalSatang, locale) })}</span>
                 </li>
               ))}
             </ul>
           )}
         </section>
         <Link href="/login" className="text-sm text-teal hover:underline">
-          พนักงานคลินิก
+          {t("staffEntry")}
         </Link>
       </main>
     );
