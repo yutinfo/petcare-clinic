@@ -2,6 +2,7 @@
 
 import { useState, useTransition } from "react";
 import { useRouter } from "next/navigation";
+import { useTranslations } from "next-intl";
 import { DateTimeField } from "@/components/staff/live";
 import { Field, Notice } from "@/components/staff/ui";
 import { Button } from "@/components/ui/button";
@@ -13,6 +14,8 @@ export function PortalBookingForm({ pets }: { pets: { id: string; name: string }
   const router = useRouter();
   const [pending, start] = useTransition();
   const [msg, setMsg] = useState<string | null>(null);
+  const t = useTranslations("portal");
+  const types = useTranslations("enum.BookingType");
   const [err, setErr] = useState<string | null>(null);
   return (
     <form
@@ -32,17 +35,17 @@ export function PortalBookingForm({ pets }: { pets: { id: string; name: string }
             setErr(res.message);
           } else {
             setErr(null);
-            setMsg(`ส่งคำขอแล้ว ${res.code} — คลินิกจะยืนยันให้`);
+            setMsg(t("booked", { code: res.code }));
             router.refresh();
           }
         });
       }}
     >
-      <h2 className="font-semibold">จองคิวออนไลน์</h2>
-      <p className="text-sm text-stone-500">เลือกสัตว์ ประเภทบริการ และเวลาที่สะดวก คำขอจะรอคลินิกอนุมัติ</p>
+      <h2 className="font-semibold">{t("bookTitle")}</h2>
+      <p className="text-sm text-stone-500">{t("bookHint")}</p>
       {err ? <Notice>{err}</Notice> : null}
       {msg ? <Notice tone="ok">{msg}</Notice> : null}
-      <Field label="สัตว์">
+      <Field label={t("pet")}>
         <Select name="petId">
           {pets.map((p) => (
             <option key={p.id} value={p.id}>
@@ -51,19 +54,19 @@ export function PortalBookingForm({ pets }: { pets: { id: string; name: string }
           ))}
         </Select>
       </Field>
-      <Field label="ต้องการจอง">
+      <Field label={t("bookType")}>
         <Select name="type" defaultValue="GROOMING">
-          <option value="GROOMING">อาบน้ำตัดขน</option>
-          <option value="CONSULT">ตรวจรักษา</option>
-          <option value="VACCINE">วัคซีน</option>
+          <option value="GROOMING">{types("GROOMING")}</option>
+          <option value="CONSULT">{types("CONSULT")}</option>
+          <option value="VACCINE">{types("VACCINE")}</option>
         </Select>
       </Field>
-      <DateTimeField name="startAt" label="วันและเวลา" defaultTo="soon" />
-      <Field label="ข้อความถึงคลินิก">
-        <Input name="note" placeholder="เช่น ตัดสั้น เบอร์ 4" />
+      <DateTimeField name="startAt" label={t("when")} defaultTo="soon" />
+      <Field label={t("note")}>
+        <Input name="note" placeholder={t("notePlaceholder")} />
       </Field>
       <Button type="submit" disabled={pending || pets.length === 0} className="w-full">
-        ส่งคำขอจอง
+        {t("submitBooking")}
       </Button>
     </form>
   );

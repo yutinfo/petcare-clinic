@@ -1967,6 +1967,20 @@ model CreditNoteLine {
   @@index([tenantId, creditNoteId])
 }
 
+/// คำแปลแค็ตตาล็อกตาม locale — นำเข้าภาษาเพิ่มได้โดยไม่เพิ่มคอลัมน์
+model CatalogTranslation {
+  id         String @id @default(uuid(7)) @db.Uuid
+  tenantId   String @map("tenant_id") @db.Uuid
+  entityType String @map("entity_type")
+  entityId   String @map("entity_id") @db.Uuid
+  field      String
+  locale     String
+  text       String
+
+  @@unique([tenantId, entityType, entityId, field, locale])
+  @@index([tenantId, entityType, locale])
+}
+
 enum DepositStatus {
   AVAILABLE
   PARTIALLY_USED
