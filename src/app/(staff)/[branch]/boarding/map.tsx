@@ -45,6 +45,12 @@ export function KennelMap({ branch, kennels }: { branch: string; kennels: Kennel
       {kennels.length === 0 ? (
         <EmptyState title="ยังไม่มีกรงในสาขานี้" hint="ตั้งค่ากรงในข้อมูลสาขาก่อนรับฝาก" />
       ) : (
+        <div className="space-y-3">
+        <ul className="flex flex-wrap gap-x-4 gap-y-1 text-sm text-stone-600">
+          <li>ว่าง — ไม่มีสัตว์เข้าพัก</li>
+          <li>มีชื่อสัตว์ — กำลังเข้าพัก</li>
+          <li>แถบสีด้านบน — สีกรงที่ตั้งไว้ ไม่ใช่สถานะ</li>
+        </ul>
         <div className="grid gap-3 sm:grid-cols-2 xl:grid-cols-3">
           {kennels.map((k) => (
             <button
@@ -60,8 +66,8 @@ export function KennelMap({ branch, kennels }: { branch: string; kennels: Kennel
               className={`clinic-card p-4 text-left ${selected === k.id ? "ring-2 ring-sky-400" : ""}`}
               style={{ borderTop: `6px solid ${k.colorHex ?? "#14b8a6"}` }}
             >
-              <p className="text-xs text-stone-400">
-                {k.zone} · {labelOf(KENNEL_SIZE, k.size)}
+              <p className="text-sm text-stone-500">
+                {[k.zone, labelOf(KENNEL_SIZE, k.size)].filter(Boolean).join(" · ")}
               </p>
               <p className="font-semibold">{k.name}</p>
               {k.stay ? (
@@ -73,6 +79,7 @@ export function KennelMap({ branch, kennels }: { branch: string; kennels: Kennel
               )}
             </button>
           ))}
+        </div>
         </div>
       )}
       <aside className="clinic-card space-y-3 p-5">

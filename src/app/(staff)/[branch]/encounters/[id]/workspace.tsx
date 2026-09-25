@@ -113,10 +113,11 @@ export function EncounterWorkspace({ branch, data }: { branch: string; data: Dat
   const setOk = (text: string) => setNotice({ tone: "ok", text });
 
   return (
-    <div className="grid gap-5 xl:grid-cols-[18rem_minmax(0,1fr)_18rem]">
-      <aside className="clinic-card space-y-4 p-5">
-        <div>
-          <p className="text-xs font-medium text-teal">{data.number}</p>
+    <div className="space-y-4">
+      <header className="clinic-card space-y-3 p-4">
+        <div className="flex flex-wrap items-start justify-between gap-4">
+        <div className="min-w-0">
+          <p className="text-sm font-medium text-teal">{data.number}</p>
           <h1 className="text-2xl font-semibold">
             <Link href={`/${branch}/pets/${data.pet.id}`} className="hover:underline">
               {data.pet.name}
@@ -134,29 +135,32 @@ export function EncounterWorkspace({ branch, data }: { branch: string; data: Dat
             {data.owner.phone ? ` · ${data.owner.phone}` : ""}
           </p>
         </div>
+        <dl className="grid grid-cols-2 gap-2 text-sm sm:grid-cols-3">
+          <div className="rounded-xl bg-cream px-3 py-2">
+            <dt className="text-sm text-stone-500">น้ำหนัก</dt>
+            <dd className="font-semibold">{data.pet.currentWeightKg ?? "—"} กก.</dd>
+          </div>
+          <div className="rounded-xl bg-cream px-3 py-2">
+            <dt className="text-sm text-stone-500">รอมาแล้ว</dt>
+            <dd className="font-semibold">
+              <WaitMinutes iso={data.arrivedAt} prefix="" />
+            </dd>
+          </div>
+          <div className="rounded-xl bg-cream px-3 py-2">
+            <dt className="text-sm text-stone-500">สัญญาณชีพล่าสุด</dt>
+            <dd className="font-semibold">
+              {latestVital
+                ? `T ${latestVital.temperatureC ?? "—"} · HR ${latestVital.heartRateBpm ?? "—"} · RR ${latestVital.respRateBpm ?? "—"}`
+                : "ยังไม่บันทึก"}
+            </dd>
+          </div>
+        </dl>
+        </div>
         <div className="flex flex-wrap gap-2">
           <StatusBadge value={data.status} map={ENCOUNTER_STATUS} />
           <StatusBadge value={data.type} map={ENCOUNTER_TYPE} />
         </div>
         <AlertChip labels={highAlerts.map((a) => a.label)} />
-        <dl className="grid grid-cols-2 gap-2 text-sm">
-          <div className="rounded-xl bg-cream p-3">
-            <dt className="text-xs text-stone-400">น้ำหนัก</dt>
-            <dd className="text-lg font-semibold">{data.pet.currentWeightKg ?? "—"} กก.</dd>
-          </div>
-          <div className="rounded-xl bg-cream p-3">
-            <dt className="text-xs text-stone-400">รอมาแล้ว</dt>
-            <dd className="text-lg font-semibold">
-              <WaitMinutes iso={data.arrivedAt} prefix="" />
-            </dd>
-          </div>
-        </dl>
-        {latestVital ? (
-          <p className="text-sm text-stone-600">
-            T {latestVital.temperatureC ?? "—"}°C · HR {latestVital.heartRateBpm ?? "—"} · RR{" "}
-            {latestVital.respRateBpm ?? "—"}
-          </p>
-        ) : null}
         <p className="text-sm text-stone-600">อาการ: {data.chiefComplaint ?? "—"}</p>
         <div className="flex flex-wrap gap-2">
           {canWrite && data.status === "WAITING" ? (
@@ -228,24 +232,29 @@ export function EncounterWorkspace({ branch, data }: { branch: string; data: Dat
           ) : null}
         </div>
         {data.priorSoap.length > 0 ? (
-          <div className="space-y-2 border-t border-stone-100 pt-3">
-            <p className="text-xs font-medium text-stone-400">ประวัติที่ลงนามแล้ว</p>
-            {data.priorSoap.map((p) => (
-              <div key={p.encounterNumber} className="rounded-xl bg-cream p-3 text-sm">
-                <p className="text-xs text-stone-400">
-                  {p.encounterNumber} · {formatThaiDate(new Date(p.arrivedAt))}
-                </p>
-                <p className="mt-1">{p.assessment || "—"}</p>
-              </div>
-            ))}
-          </div>
+          <details className="rounded-xl bg-cream px-3 py-2 text-sm">
+            <summary className="cursor-pointer text-sm text-stone-500">
+              ประวัติที่ลงนามแล้ว {data.priorSoap.length} เคส
+            </summary>
+            <div className="mt-2 space-y-2">
+              {data.priorSoap.map((p) => (
+                <div key={p.encounterNumber}>
+                  <p className="text-sm text-stone-500">
+                    {p.encounterNumber} · {formatThaiDate(new Date(p.arrivedAt))}
+                  </p>
+                  <p>{p.assessment || "—"}</p>
+                </div>
+              ))}
+            </div>
+          </details>
         ) : null}
-        <Link href={`/${branch}/queue`} className="block text-sm text-teal hover:underline">
+        <Link href={`/${branch}/queue`} className="inline-block text-sm text-teal hover:underline">
           กลับกระดานคิว
         </Link>
-      </aside>
+      </header>
 
-      <section className="clinic-card p-5">
+      <div className="grid items-start gap-4 lg:grid-cols-[minmax(0,1fr)_18rem]">
+      <section className="clinic-card min-w-0 p-5">
         {canRead ? (
           <div className="mb-4 flex flex-wrap gap-2">
             {(
@@ -304,7 +313,7 @@ export function EncounterWorkspace({ branch, data }: { branch: string; data: Dat
                 <span className="flex items-baseline gap-2">
                   <span className="font-semibold text-teal">{field.letter}</span>
                   <span className="font-medium">{field.label}</span>
-                  <span className="text-xs text-stone-400">{field.hint}</span>
+                  <span className="text-sm text-stone-500">{field.hint}</span>
                 </span>
                 <Textarea
                   value={soap[field.key]}
@@ -372,7 +381,7 @@ export function EncounterWorkspace({ branch, data }: { branch: string; data: Dat
                 }}
               />
             ) : canWrite ? (
-              <p className="text-xs text-stone-400">บันทึกร่างก่อน แล้วค่อยลงนาม — หลังลงนามแก้ไม่ได้</p>
+              <p className="text-sm text-stone-500">บันทึกร่างก่อน แล้วค่อยลงนาม — หลังลงนามแก้ไม่ได้</p>
             ) : null}
             {canWrite ? (
               <VitalsForm
@@ -423,7 +432,7 @@ export function EncounterWorkspace({ branch, data }: { branch: string; data: Dat
         ) : null}
       </section>
 
-      <aside className="clinic-card space-y-4 p-5">
+      <aside className="clinic-card space-y-4 p-5 lg:sticky lg:top-20">
         <h2 className="font-semibold">ค่าใช้จ่ายในเคสนี้</h2>
         <ul className="space-y-2 text-sm">
           {data.charges.length === 0 ? <li className="text-stone-400">ยังไม่มีรายการ — สั่งยาหรือทำหัตถการแล้วจะโชว์ที่นี่</li> : null}
@@ -431,7 +440,7 @@ export function EncounterWorkspace({ branch, data }: { branch: string; data: Dat
             <li key={c.id} className="flex justify-between gap-2">
               <span>
                 {c.description}
-                <span className="block text-[11px] text-stone-400">{labelOf(CHARGE_STATUS, c.status)}</span>
+                <span className="block text-sm text-stone-500">{labelOf(CHARGE_STATUS, c.status)}</span>
               </span>
               <span className="font-medium tabular-nums">{formatSatangTh(c.amountSatang)}</span>
             </li>
@@ -458,6 +467,7 @@ export function EncounterWorkspace({ branch, data }: { branch: string; data: Dat
           ไปคิดเงินที่เคาน์เตอร์ (พร้อมเพย์ / บัตร)
         </Link>
       </aside>
+      </div>
     </div>
   );
 }
@@ -483,7 +493,7 @@ function VitalsForm({
     <div className="space-y-2 rounded-2xl bg-cream p-3">
       <p className="text-sm font-medium">สัญญาณชีพ</p>
       {vitals.length > 0 ? (
-        <ul className="text-xs text-stone-500">
+        <ul className="text-sm text-stone-500">
           {vitals.slice(0, 3).map((v) => (
             <li key={v.id}>
               T {v.temperatureC ?? "—"} · HR {v.heartRateBpm ?? "—"} · RR {v.respRateBpm ?? "—"}
@@ -508,9 +518,15 @@ function VitalsForm({
           });
         }}
       >
-        <Input name="temperatureC" placeholder="อุณหภูมิ °C" />
-        <Input name="heartRateBpm" placeholder="ชีพจร" />
-        <Input name="respRateBpm" placeholder="หายใจ" />
+        <Field label="อุณหภูมิ (°C)">
+          <Input name="temperatureC" inputMode="decimal" aria-label="อุณหภูมิ องศาเซลเซียส" />
+        </Field>
+        <Field label="ชีพจร (ครั้ง/นาที)">
+          <Input name="heartRateBpm" inputMode="numeric" aria-label="ชีพจร ครั้งต่อนาที" />
+        </Field>
+        <Field label="หายใจ (ครั้ง/นาที)">
+          <Input name="respRateBpm" inputMode="numeric" aria-label="หายใจ ครั้งต่อนาที" />
+        </Field>
         <div className="sm:col-span-3">
           <Button type="submit" variant="outline" size="sm" disabled={pending}>
             บันทึกสัญญาณชีพ

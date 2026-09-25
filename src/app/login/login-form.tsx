@@ -11,6 +11,7 @@ const DEMO = [
   { email: "nune@demo.local", label: "นุ่น · ต้อนรับ" },
   { email: "ek@demo.local", label: "เอก · สัตวแพทย์" },
   { email: "jo@demo.local", label: "โจ · ห้องยา" },
+  { email: "ann@demo.local", label: "แอน · ผู้จัดการ" },
 ] as const;
 
 export function LoginForm({ from }: { from?: string }) {
@@ -39,7 +40,7 @@ export function LoginForm({ from }: { from?: string }) {
         {pending ? "กำลังเข้าสู่ระบบ…" : "เข้าสู่ระบบ"}
       </Button>
       <div className="rounded-2xl bg-cream px-3 py-3">
-        <p className="text-xs text-stone-500">คลินิกตัวอย่าง — กดเลือกบัญชี รหัส demo1234</p>
+        <p className="text-sm text-stone-500">คลินิกตัวอย่าง — กดเลือกบัญชี รหัส demo1234</p>
         <div className="mt-2 flex flex-wrap gap-2">
           {DEMO.map((d) => (
             <button

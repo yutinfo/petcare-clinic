@@ -91,7 +91,7 @@ export function StaffShell({
         <Link href={`/${branch}`} className="px-2">
           <ClinicMark />
         </Link>
-        <p className="mt-4 px-2 text-[11px] font-medium uppercase tracking-wider text-stone-400">
+        <p className="mt-4 px-2 text-[13px] font-medium leading-5 text-stone-500">
           {tenantName} · {branchName}
         </p>
         <nav className="mt-4 flex flex-1 flex-col gap-0.5 overflow-y-auto">
@@ -109,7 +109,7 @@ export function StaffShell({
         </nav>
         <div className="mt-3 rounded-2xl bg-cream px-3 py-3">
           <p className="text-sm font-medium text-ink">{displayName}</p>
-          <p className="text-xs text-stone-400">พนักงานคลินิก</p>
+          <p className="text-sm text-stone-500">พนักงานคลินิก</p>
           <div className="mt-2">{signOut}</div>
         </div>
       </aside>
@@ -124,7 +124,7 @@ export function StaffShell({
             <span className="mx-2 text-stone-300">·</span>
             <span className="tabular-nums">{clock}</span>
           </p>
-          <p className="hidden text-sm text-stone-400 lg:block">
+          <p className="hidden text-sm text-stone-500 lg:block">
             {tenantName} · {branchName}
           </p>
           <p className="text-sm tabular-nums text-stone-500 lg:hidden">{clock}</p>
@@ -198,7 +198,7 @@ export function StaffShell({
             </nav>
             <div className="mt-4 rounded-2xl bg-cream px-3 py-3">
               <p className="text-sm font-medium">{displayName}</p>
-              <p className="text-xs text-stone-400">
+              <p className="text-sm text-stone-500">
                 {tenantName} · {branchName}
               </p>
               <div className="mt-2">{signOut}</div>
@@ -244,7 +244,7 @@ function NavLink({
       </span>
       <span>
         <span className="block text-sm font-medium text-ink">{label}</span>
-        <span className="block text-[11px] text-stone-400">{hint}</span>
+        <span className="block text-sm text-stone-500">{hint}</span>
       </span>
     </Link>
   );

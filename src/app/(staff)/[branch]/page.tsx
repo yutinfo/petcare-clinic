@@ -1,5 +1,6 @@
 import Link from "next/link";
 import { redirect } from "next/navigation";
+import { DEPARTMENT_SURFACE } from "@/components/staff/nav";
 import { PageHeader } from "@/components/staff/ui";
 import { ENCOUNTER_STATUS, labelOf, waitMinutes } from "@/components/staff/labels";
 import { WaitMinutes } from "@/components/staff/live";
@@ -57,14 +58,14 @@ export default async function BranchHomePage({
         href: `/${branch}/boarding`,
         label: "ฝากเลี้ยง",
         value: `${dash.boarding}/${dash.kennels}`,
-        tone: "bg-violet-50 text-violet-900",
+        tone: DEPARTMENT_SURFACE.boarding,
         hint: "กรงที่ใช้อยู่ / ทั้งหมด",
       },
       {
         href: `/${branch}/grooming`,
         label: "คิวกรูมมิ่ง",
         value: String(dash.grooming),
-        tone: "bg-rose-50 text-rose-900",
+        tone: DEPARTMENT_SURFACE.grooming,
         hint: "งานที่ยังไม่ส่งมอบ",
       },
     ];
@@ -82,7 +83,7 @@ export default async function BranchHomePage({
             <Link key={c.label} href={c.href} className={`clinic-card p-5 ${c.tone}`}>
               <p className="text-sm opacity-80">{c.label}</p>
               <p className="mt-2 text-3xl font-semibold tabular-nums">{c.value}</p>
-              <p className="mt-1 text-xs opacity-70">{c.hint}</p>
+              <p className="mt-1 text-sm">{c.hint}</p>
             </Link>
           ))}
         </div>

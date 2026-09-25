@@ -73,7 +73,7 @@ export function Field({
     <label className={cn("block space-y-1.5 text-sm", className)}>
       <span className="font-medium text-ink">{label}</span>
       {children}
-      {hint ? <span className="block text-xs text-stone-400">{hint}</span> : null}
+      {hint ? <span className="block text-sm text-stone-500">{hint}</span> : null}
     </label>
   );
 }

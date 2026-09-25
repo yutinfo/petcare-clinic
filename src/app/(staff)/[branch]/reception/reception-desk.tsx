@@ -73,16 +73,34 @@ export function ReceptionDesk({
           title="ค้นหาแล้วเปิดเคส"
           description="พิมพ์เบอร์โทร ชื่อเจ้าของ ชื่อสัตว์ หรือรหัส — เลือกตัวสัตว์ ชั่งน้ำหนัก แล้วเปิดเคส"
         />
+        {selected ? (
+          <>
+            {message ? <Notice>{message}</Notice> : null}
+            <CheckInPanel
+              branch={branch}
+              selected={selected}
+              pending={pending}
+              start={start}
+              onError={setMessage}
+              onCancel={() => {
+                setMessage(null);
+                setSelected(null);
+              }}
+            />
+          </>
+        ) : (
+          <>
         <Input
           ref={searchBox}
           value={query}
           onChange={(e) => setQuery(e.target.value)}
           placeholder="เช่น 0812345678 หรือ ข้าวปุ้น"
           className="h-14 text-lg"
+          aria-label="ค้นหาเจ้าของหรือสัตว์"
         />
         {message ? <Notice tone={hits.length === 0 ? "warn" : "error"}>{message}</Notice> : null}
 
-        {query.trim().length < 2 && !selected ? (
+        {query.trim().length < 2 ? (
           <EmptyState title="เริ่มจากช่องค้นหาด้านบน" hint="พิมพ์อย่างน้อย 2 ตัวอักษร หรือสร้างลูกค้าใหม่ถ้ามาครั้งแรก" />
         ) : null}
 
@@ -103,7 +121,6 @@ export function ReceptionDesk({
               ) : (
                 <ul className="mt-3 grid gap-2 sm:grid-cols-2">
                   {owner.pets.map((pet) => {
-                    const on = selected?.pet.id === pet.id;
                     return (
                       <li key={pet.id}>
                         <button
@@ -111,10 +128,9 @@ export function ReceptionDesk({
                           onClick={() => {
                             setSelected({ owner, pet });
                             setCreating(false);
+                            setMessage(null);
                           }}
-                          className={`flex min-h-14 w-full flex-col items-start rounded-xl border px-3 py-2 text-left ${
-                            on ? "border-coral bg-orange-50" : "border-stone-200 hover:border-coral hover:bg-orange-50"
-                          }`}
+                          className="flex min-h-14 w-full flex-col items-start rounded-xl border border-stone-200 px-3 py-2 text-left hover:border-coral hover:bg-orange-50"
                         >
                           <span className="font-medium">
                             {pet.name}{" "}
@@ -154,6 +170,7 @@ export function ReceptionDesk({
               onCreated={(owner, pet) => {
                 setSelected({ owner, pet });
                 setCreating(false);
+                setMessage(null);
                 setQuery(owner.phone ?? pet.name);
               }}
               onError={setMessage}
@@ -161,17 +178,8 @@ export function ReceptionDesk({
             />
           ) : null}
         </div>
-
-        {selected ? (
-          <CheckInPanel
-            branch={branch}
-            selected={selected}
-            pending={pending}
-            start={start}
-            onError={setMessage}
-            onCancel={() => setSelected(null)}
-          />
-        ) : null}
+          </>
+        )}
       </section>
 
       <aside className="space-y-3">
@@ -315,7 +323,7 @@ function CheckInPanel({
     >
       <div className="flex items-start justify-between gap-2">
         <div>
-          <p className="text-xs text-stone-400">กำลังเปิดเคส</p>
+          <p className="text-sm text-stone-500">สัตว์ที่เลือก</p>
           <h2 className="text-xl font-semibold">
             {selected.pet.name} · {selected.owner.displayName}
           </h2>
@@ -323,9 +331,9 @@ function CheckInPanel({
             {selected.pet.speciesNameTh} · {selected.pet.code}
           </p>
         </div>
-        <button type="button" className="text-sm text-stone-500 underline" onClick={onCancel}>
-          ยกเลิก
-        </button>
+        <Button type="button" variant="outline" onClick={onCancel}>
+          เปลี่ยนสัตว์
+        </Button>
       </div>
       <AlertChip labels={highAlerts.map((a) => a.label)} />
       <div className="grid gap-3 sm:grid-cols-2">

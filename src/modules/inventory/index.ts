@@ -1,4 +1,4 @@
-export { availableFefoQty, consumeFefo } from "./fefo";
+export { availableFefoQty, consumeFefo, returnSoldLots } from "./fefo";
 export {
   listStockOnHand,
   searchProducts,

@@ -36,6 +36,13 @@ export const BOOKING_TYPE: Record<string, string> = {
   OTHER: "อื่น ๆ",
 };
 
+export const CREDIT_REASON: Record<string, string> = {
+  PRICE_ERROR: "ราคาหรือจำนวนสูงไป",
+  SERVICE_NOT_RENDERED: "บริการไม่ได้ทำให้",
+  RETURN: "รับคืนสินค้า",
+  DISCOUNT_AFTER: "ส่วนลดภายหลัง",
+};
+
 export const GROOMING_STATUS: Record<string, string> = {
   SCHEDULED: "นัดไว้",
   CHECKED_IN: "รับแล้ว",

@@ -17,11 +17,17 @@ export type ShiftView = {
 };
 
 async function cashReceivedOnShift(tx: Prisma.TransactionClient, shiftId: string) {
-  const rows = await tx.payment.aggregate({
-    where: { shiftId, method: "CASH", status: "SUCCEEDED" },
-    _sum: { amountSatang: true },
-  });
-  return rows._sum.amountSatang ?? 0;
+  const [received, refunded] = await Promise.all([
+    tx.payment.aggregate({
+      where: { shiftId, method: "CASH", status: "SUCCEEDED" },
+      _sum: { amountSatang: true },
+    }),
+    tx.payment.aggregate({
+      where: { shiftId, method: "CASH", status: "REFUNDED" },
+      _sum: { amountSatang: true },
+    }),
+  ]);
+  return (received._sum.amountSatang ?? 0) - (refunded._sum.amountSatang ?? 0);
 }
 
 export async function findOpenCashierShift(ctx: AppContext) {

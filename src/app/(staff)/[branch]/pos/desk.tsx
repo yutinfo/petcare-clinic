@@ -6,7 +6,7 @@ import { useRouter } from "next/navigation";
 import { OwnerPetPicker } from "@/components/staff/owner-pet-picker";
 import { PAYMENT_METHOD } from "@/components/staff/labels";
 import { askToProceed } from "@/components/staff/live";
-import { EmptyState, Notice } from "@/components/staff/ui";
+import { EmptyState, Field, Notice } from "@/components/staff/ui";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { formatSatangTh } from "@/modules/shared/money";
@@ -97,7 +97,7 @@ export function PosDesk({
           />
           {waitingOwners.length > 0 ? (
             <div>
-              <p className="mb-2 text-xs text-stone-400">ค้างชำระ</p>
+              <p className="mb-2 text-sm text-stone-500">ค้างชำระ</p>
               <div className="flex flex-wrap gap-2">
                 {waitingOwners.map(([id, info]) => (
                   <button
@@ -122,7 +122,14 @@ export function PosDesk({
           <EmptyState title="ยังไม่ได้เลือกลูกค้า" hint="ค้นด้านบน หรือกดชื่อจากรายการค้างชำระ แล้วค่อยแตะสินค้า" />
         ) : (
           <>
-            <Input value={filter} onChange={(e) => setFilter(e.target.value)} placeholder="ค้นสินค้า / สแกนบาร์โค้ด" />
+            <Field label="ค้นสินค้า">
+              <Input
+                value={filter}
+                onChange={(e) => setFilter(e.target.value)}
+                placeholder="ชื่อหรือบาร์โค้ด"
+                aria-label="ค้นสินค้า"
+              />
+            </Field>
             {visible.length === 0 ? (
               <EmptyState title="ไม่พบสินค้าหน้าร้าน" hint="ยาที่ต้องมีใบสั่งจะไม่โชว์ที่นี่ — จ่ายที่ห้องยา" />
             ) : (

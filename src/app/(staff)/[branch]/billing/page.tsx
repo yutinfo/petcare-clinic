@@ -1,24 +1,40 @@
 import { redirect } from "next/navigation";
 import { PageHeader } from "@/components/staff/ui";
 import { ForbiddenScreen } from "@/components/staff/forbidden";
-import { findOpenCashierShift } from "@/modules/billing";
+import { findOpenCashierShift, listCreditableInvoices, listRecentCreditNotes } from "@/modules/billing";
 import { ForbiddenError, UnauthenticatedError } from "@/modules/shared";
 import { getStaffContext } from "@/server/staff-context";
+import { CreditDesk } from "./credit-desk";
 import { ShiftDesk } from "./desk";
 
 export default async function BillingPage({ params }: { params: Promise<{ branch: string }> }) {
   const { branch } = await params;
   try {
     const ctx = await getStaffContext(branch);
+    const canCredit = ctx.actor.permissions.has("billing:credit_note");
     const shift = await findOpenCashierShift(ctx);
+    const invoices = canCredit ? await listCreditableInvoices(ctx) : [];
+    const recent = canCredit ? await listRecentCreditNotes(ctx) : [];
     return (
-      <div className="space-y-5">
-        <PageHeader
-          eyebrow="กะเงินสด"
-          title={shift ? "กะที่เปิดอยู่" : "เปิดกะก่อนรับเงินสด"}
-          description="ยอดที่ควรมี = เงินทอนตั้งต้น + เงินสดที่รับในกะนี้ · ผลต่างต้องมีเหตุผลและผู้จัดการอนุมัติ"
-        />
-        <ShiftDesk branch={branch} shift={shift} />
+      <div className="space-y-8">
+        <section className="space-y-5">
+          <PageHeader
+            eyebrow="กะเงินสด"
+            title={shift ? "กะที่เปิดอยู่" : "เปิดกะก่อนรับเงินสด"}
+            description="ยอดที่ควรมี = เงินทอนตั้งต้น + เงินสดที่รับในกะนี้ · ผลต่างต้องมีเหตุผลและผู้จัดการอนุมัติ"
+          />
+          <ShiftDesk branch={branch} shift={shift} />
+        </section>
+        {canCredit ? (
+          <section className="space-y-5">
+            <PageHeader
+              eyebrow="ใบลดหนี้"
+              title="ลดยอดบิลที่ออกแล้ว"
+              description="ไม่แก้ตัวเลขบนใบกำกับเดิม คืนสินค้าเป็นรายการได้ และคืนเงินสดได้เมื่อเปิดกะอยู่"
+            />
+            <CreditDesk branch={branch} invoices={invoices} recent={recent} />
+          </section>
+        ) : null}
       </div>
     );
   } catch (err) {

@@ -7,10 +7,16 @@ export const STAFF_NAV = [
   { href: "pharmacy", label: "ห้องยา", hint: "จ่ายยา FEFO", tone: "rose", icon: "pharmacy" },
   { href: "inventory", label: "คลัง", hint: "สต็อกและรับเข้า", tone: "sun", icon: "inventory" },
   { href: "pos", label: "ขายหน้าร้าน", hint: "คิดเงินออกบิล", tone: "teal", icon: "pos" },
-  { href: "billing", label: "กะเงินสด", hint: "เปิดกะและปิดกะ", tone: "sun", icon: "billing" },
+  { href: "billing", label: "การเงิน", hint: "กะเงินสดและใบลดหนี้", tone: "sun", icon: "billing" },
   { href: "boarding", label: "ฝากเลี้ยง", hint: "ผังกรง", tone: "sky", icon: "boarding" },
   { href: "grooming", label: "อาบน้ำตัดขน", hint: "คิวช่าง", tone: "rose", icon: "grooming" },
 ] as const;
+
+/** พื้นการ์ดของแผนก — โทนเดียวกับไอคอนในเมนู และคนละความหมายกับสีสถานะคิว */
+export const DEPARTMENT_SURFACE = {
+  boarding: "bg-sky-50 text-sky-950",
+  grooming: "bg-rose-50 text-rose-950",
+} as const;
 
 export const TONE_CLASS: Record<string, string> = {
   sun: "bg-amber-100 text-amber-800",

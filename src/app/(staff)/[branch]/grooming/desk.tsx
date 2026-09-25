@@ -45,64 +45,24 @@ export function GroomingDesk({ branch, rows }: { branch: string; rows: Row[] }) 
   const [style, setStyle] = useState("");
 
   return (
-    <div className="space-y-4">
-      <form
-        className="clinic-card space-y-3 p-4"
-        onSubmit={(e) => {
-          e.preventDefault();
-          if (!petId) {
-            setMsg("เลือกสัตว์ก่อนเปิดคิว");
-            return;
-          }
-          start(async () => {
-            const res = await startGroomAction(branch, petId, style);
-            if (!res.ok) setMsg(res.message);
-            else {
-              setMsg(null);
-              setPetId(null);
-              setPetLabel("");
-              setStyle("");
-              router.refresh();
-            }
-          });
-        }}
-      >
-        <h2 className="font-semibold">เปิดคิวใหม่</h2>
-        {msg ? <Notice>{msg}</Notice> : null}
-        <OwnerPetPicker
-          branch={branch}
-          mode="pet"
-          placeholder="ค้นสัตว์เพื่อเปิดคิว"
-          selectedLabel={petLabel || undefined}
-          onPickPet={(owner, pet) => {
-            setPetId(pet.id);
-            setPetLabel(`${pet.name} · ${owner.displayName}`);
-          }}
-        />
-        <Field label="สไตล์ตัด / เบอร์ปัตตาเลี่ยน">
-          <Input value={style} onChange={(e) => setStyle(e.target.value)} placeholder="เช่น เบอร์ 4 หลังสั้น" />
-        </Field>
-        <Button type="submit" disabled={pending || !petId}>
-          เปิดคิว
-        </Button>
-      </form>
-
+    <div className="grid items-start gap-4 lg:grid-cols-[minmax(0,1fr)_18rem]">
+      <div className="order-2 space-y-4 lg:order-1">
       {rows.length === 0 ? (
-        <EmptyState title="ยังไม่มีคิววันนี้" hint="ค้นสัตว์ด้านบนแล้วกดเปิดคิว" />
+        <EmptyState title="ยังไม่มีคิววันนี้" hint="เปิดคิวจากแบบฟอร์ม แล้วสถานะจะเรียงในคอลัมน์นี้" />
       ) : (
-        <div className="grid gap-4 md:grid-cols-2 xl:grid-cols-4">
+        <div className="grid gap-4 sm:grid-cols-2 xl:grid-cols-3">
           {COLS.map((col) => {
             const items = rows.filter((r) => r.status === col.key || col.also.includes(r.status));
             return (
               <section key={col.key} className="space-y-2">
                 <h2 className="font-semibold">
-                  {col.title} <span className="text-sm font-normal text-stone-400">{items.length}</span>
+                  {col.title} <span className="text-sm font-normal text-stone-500">{items.length}</span>
                 </h2>
-                {items.length === 0 ? <p className="text-sm text-stone-400">ว่าง</p> : null}
+                {items.length === 0 ? <p className="text-sm text-stone-500">ว่าง</p> : null}
                 {items.map((j) => (
                   <article key={j.id} className="clinic-card p-4">
                     <div className="flex items-center justify-between gap-2">
-                      <p className="text-xs text-stone-400">
+                      <p className="text-sm text-stone-500">
                         {j.code} · {j.groomerName}
                       </p>
                       <StatusBadge value={j.status} map={GROOMING_STATUS} />
@@ -142,6 +102,47 @@ export function GroomingDesk({ branch, rows }: { branch: string; rows: Row[] }) 
           })}
         </div>
       )}
+      </div>
+      <form
+        className="order-1 clinic-card space-y-3 p-4 lg:sticky lg:top-20 lg:order-2"
+        onSubmit={(e) => {
+          e.preventDefault();
+          if (!petId) {
+            setMsg("เลือกสัตว์ก่อนเปิดคิว");
+            return;
+          }
+          start(async () => {
+            const res = await startGroomAction(branch, petId, style);
+            if (!res.ok) setMsg(res.message);
+            else {
+              setMsg(null);
+              setPetId(null);
+              setPetLabel("");
+              setStyle("");
+              router.refresh();
+            }
+          });
+        }}
+      >
+        <h2 className="font-semibold">เปิดคิวใหม่</h2>
+        {msg ? <Notice>{msg}</Notice> : null}
+        <OwnerPetPicker
+          branch={branch}
+          mode="pet"
+          placeholder="ชื่อสัตว์หรือเบอร์เจ้าของ"
+          selectedLabel={petLabel || undefined}
+          onPickPet={(owner, pet) => {
+            setPetId(pet.id);
+            setPetLabel(`${pet.name} · ${owner.displayName}`);
+          }}
+        />
+        <Field label="สไตล์ตัด / เบอร์ปัตตาเลี่ยน">
+          <Input value={style} onChange={(e) => setStyle(e.target.value)} placeholder="เช่น เบอร์ 4 หลังสั้น" />
+        </Field>
+        <Button type="submit" disabled={pending || !petId} className="w-full">
+          เปิดคิว
+        </Button>
+      </form>
     </div>
   );
 }
